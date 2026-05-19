@@ -4,7 +4,10 @@ import torch.nn.functional as F
 
 from functools import lru_cache
 from speechbrain.pretrained import SpeakerRecognition
-
+from silero_vad import (
+    load_silero_vad,
+    get_speech_timestamps
+)
 # =====================================================
 # CONFIG
 # =====================================================
@@ -29,8 +32,29 @@ verification_model = SpeakerRecognition.from_hparams(
 # CACHED EMBEDDING EXTRACTION
 # =====================================================
 
+# =====================================================
+# AUDIO VALIDATION
+# =====================================================
+
+
+def validate_audio_file(audio_path: str):
+    """
+    Validate audio file before processing.
+    Only .wav files are allowed.
+    """
+
+    # Check file exists
+    if not os.path.exists(audio_path):
+        raise FileNotFoundError(f"Audio file not found: {audio_path}")
+
+    # Check extension
+    if not audio_path.lower().endswith(".wav"):
+        raise ValueError(f"Only WAV files are supported. " f"Received: {audio_path}")
+
+
 @lru_cache(maxsize=1000)
 def get_embedding(audio_path: str):
+    validate_audio_file(audio_path)
     """
     Load audio, extract embedding, squeeze to [192],
     and L2-normalize — all inside the cache so every
@@ -41,8 +65,8 @@ def get_embedding(audio_path: str):
         signal = signal.unsqueeze(0).to(DEVICE)
         embedding = verification_model.encode_batch(signal)  # [1, 1, 192]
 
-    embedding = embedding.squeeze()                          # [192]
-    embedding = F.normalize(embedding, p=2, dim=0)          # unit vector
+    embedding = embedding.squeeze()  # [192]
+    embedding = F.normalize(embedding, p=2, dim=0)  # unit vector
     return embedding
 
 
@@ -50,10 +74,11 @@ def get_embedding(audio_path: str):
 # VERIFY USING EMBEDDINGS
 # =====================================================
 
+
 def verify_speakers(
     audio1_path: str,
     audio2_path: str,
-    threshold: float = 0.25   # calibrated for ECAPA cosine score range
+    threshold: float = 0.25,  # calibrated for ECAPA cosine score range
 ):
     """
     Verify whether two audio files belong to the same speaker.
@@ -100,7 +125,7 @@ if __name__ == "__main__":
 
     result = verify_speakers(
         r"D:\majorproject\testing\ecapa\audio-dataset\aryan2.mp3",
-        r"D:\majorproject\testing\ecapa\audio-dataset\Aryan.mp3"
+        r"D:\majorproject\testing\ecapa\audio-dataset\Aryan.mp3",
     )
 
     print(result)
