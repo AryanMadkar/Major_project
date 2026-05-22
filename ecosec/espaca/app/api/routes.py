@@ -4,8 +4,7 @@ from werkzeug.utils import secure_filename
 import uuid
 
 from app.core.config import TEMP_DIR
-from app.audio.pipeline import process_audio
-
+from app.services.verification_service import verify_speaker
 # ======================================================
 # BLUEPRINT
 # ======================================================
@@ -53,14 +52,9 @@ def verify():
         audio1.save(path1)
         audio2.save(path2)
 
-        #--------------------------------------------------
-        # PROCESS AUDIO
-        #--------------------------------------------------
-        waveform1 = process_audio(path1)
-        waveform2 = process_audio(path2)
+
         
-        duration1 = waveform1.shape[1] / 16000
-        duration2 = waveform2.shape[1] / 16000
+        result = verify_speaker(path1, path2)
         
         # --------------------------------------------------
         # RETURN RESPONSE
@@ -70,11 +64,7 @@ def verify():
             "message": "files uploaded successfully",
             "audio1_path": str(path1),
             "audio2_path": str(path2),
-            "audio1_shape": waveform1.shape,
-            "audio2_shape": waveform2.shape,
-            "audio1_duration_seconds": duration1,
-            "audio2_duration_seconds": duration2
-            
+            "verification_result": result
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
