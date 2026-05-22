@@ -2,12 +2,13 @@ import torch
 import torch.nn.functional as F
 
 from speechbrain.inference import EncoderClassifier
-
+from app.utils.hashing import get_file_hash
 from app.audio.pipeline import process_audio
-
+from app.models.embedding_cache import embedding_cache
 # ======================================================
 # DEVICE
 # ======================================================
+
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -72,8 +73,26 @@ print("[ECAPA] Warmup complete")
 def get_embedding(audio_path):
 
     """
-    Extract speaker embedding.
+    Extract speaker embedding with cache optimization.
     """
+
+    # --------------------------------------------------
+    # HASH AUDIO
+    # --------------------------------------------------
+
+    audio_hash = get_file_hash(audio_path)
+
+    # --------------------------------------------------
+    # CACHE HIT
+    # --------------------------------------------------
+
+    if audio_hash in embedding_cache:
+
+        print("[CACHE] HIT")
+
+        return embedding_cache[audio_hash]
+
+    print("[CACHE] MISS")
 
     # --------------------------------------------------
     # PROCESS AUDIO
@@ -113,5 +132,8 @@ def get_embedding(audio_path):
 
     # (1,1,192) -> (192,)
     embedding = embedding.squeeze()
+
+    # Cache the embedding
+    embedding_cache[audio_hash] = embedding
 
     return embedding
