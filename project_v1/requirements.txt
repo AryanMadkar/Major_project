@@ -1,0 +1,15 @@
+fastapi
+uvicorn
+langgraph
+torch==2.2.2
+torchaudio==2.2.2
+numpy<2
+librosa
+soundfile
+speechbrain
+silero-vad
+nemo_toolkit[asr]==1.23.0
+pydantic
+python-multipart
+huggingface-hub==0.22.2
+cloudpickle
