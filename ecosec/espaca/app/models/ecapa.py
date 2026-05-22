@@ -1,5 +1,23 @@
+import warnings
+
 import torch
 import torch.nn.functional as F
+
+warnings.filterwarnings(
+    "ignore",
+    message=r"`torch\.cuda\.amp\.custom_fwd.*",
+    category=FutureWarning,
+)
+warnings.filterwarnings(
+    "ignore",
+    message=r"Requested Pretrainer collection using symlinks on Windows.*",
+    category=UserWarning,
+)
+warnings.filterwarnings(
+    "ignore",
+    message=r"Module 'speechbrain\.pretrained' was deprecated.*",
+    category=UserWarning,
+)
 
 from speechbrain.inference import EncoderClassifier
 from app.utils.hashing import get_file_hash

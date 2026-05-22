@@ -2,6 +2,14 @@ from flask import Flask
 
 from app.api.routes import api
 from app.core.logger import logger
+from app.monitoring.health import health
+from app.middleware.security_headers import (
+    apply_security_headers
+)
+
+from app.middleware.request_id import (
+    assign_request_id
+)
 # ======================================================
 # CREATE FLASK APP
 # ======================================================
@@ -13,7 +21,19 @@ app = Flask(__name__)
 # ======================================================
 
 app.register_blueprint(api)
+app.register_blueprint(health)
 
+@app.before_request
+def before_request():
+
+    assign_request_id()
+    
+@app.after_request
+def after_request(response):
+
+    return apply_security_headers(
+        response
+    )
 
 # ======================================================
 # RUN SERVER
