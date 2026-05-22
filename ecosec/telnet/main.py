@@ -10,6 +10,9 @@ from app.middleware.security_headers import (
 from app.middleware.request_id import (
     assign_request_id
 )
+from app.middleware.rate_limiter import (
+    enforce_rate_limit
+)
 # ======================================================
 # CREATE FLASK APP
 # ======================================================
@@ -27,6 +30,11 @@ app.register_blueprint(health)
 def before_request():
 
     assign_request_id()
+
+    rate_limit_response = enforce_rate_limit()
+
+    if rate_limit_response is not None:
+        return rate_limit_response
     
 @app.after_request
 def after_request(response):

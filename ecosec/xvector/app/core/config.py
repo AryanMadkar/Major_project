@@ -21,7 +21,13 @@ TARGET_SAMPLE_RATE = 16000
 # ECAPA SETTINGS
 # ======================================================
 
-ECAPA_MODEL_NAME = "speechbrain/spkrec-ecapa-voxceleb"
+ECAPA_MODEL_NAME = "speechbrain/spkrec-resnet-voxceleb"
+
+# ======================================================
+# MODEL SETTINGS
+# ======================================================
+
+USE_FP16 = False
 
 # ======================================================
 # VERIFICATION SETTINGS
@@ -34,10 +40,6 @@ SPEAKER_THRESHOLD = 0.6
 # ======================================================
 
 RATE_LIMIT_PER_MINUTE = 30
-
-NEMO_CACHE_DIR = BASE_DIR / "cache" / "nemo"
-
-NEMO_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 
 
