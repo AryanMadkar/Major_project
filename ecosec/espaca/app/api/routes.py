@@ -59,6 +59,9 @@ def verify():
         waveform1 = process_audio(path1)
         waveform2 = process_audio(path2)
         
+        duration1 = waveform1.shape[1] / 16000
+        duration2 = waveform2.shape[1] / 16000
+        
         # --------------------------------------------------
         # RETURN RESPONSE
         # --------------------------------------------------
@@ -68,7 +71,9 @@ def verify():
             "audio1_path": str(path1),
             "audio2_path": str(path2),
             "audio1_shape": waveform1.shape,
-            "audio2_shape": waveform2.shape
+            "audio2_shape": waveform2.shape,
+            "audio1_duration_seconds": duration1,
+            "audio2_duration_seconds": duration2
             
         })
     except Exception as e:
