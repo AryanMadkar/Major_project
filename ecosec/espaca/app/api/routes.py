@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request
 from werkzeug.utils import secure_filename
 from app.utils.timers import Timer
 import uuid
@@ -8,7 +8,16 @@ from app.services.verification_service import verify_speaker
 # ======================================================
 # BLUEPRINT
 # ======================================================
+from app.utils.validators import (
+    validate_extension,
+    validate_file_size
+)
 
+from app.utils.responses import (
+    success_response,
+    error_response
+)
+from app.core.logger import logger
 api = Blueprint("api", __name__)
 
 # ======================================================
@@ -18,23 +27,52 @@ api = Blueprint("api", __name__)
 @api.route("/verify", methods=["POST"])
 def verify():
     with Timer("Verification Request"):
+        path1 = None
+        path2 = None
         try:
-                    # --------------------------------------------------
+            logger.info("Received verification request")
+            # --------------------------------------------------
             # CHECK FILES
             # --------------------------------------------------
 
             if "audio1" not in request.files:
-                return jsonify({
-                    "error": "audio1 missing"
-                }), 400
+                logger.warning("Missing audio1 in request")
+                return error_response("audio1 missing", status=400)
 
             if "audio2" not in request.files:
-                return jsonify({
-                    "error": "audio2 missing"
-                }), 400
+                logger.warning("Missing audio2 in request")
+                return error_response("audio2 missing", status=400)
 
             audio1 = request.files["audio1"]
             audio2 = request.files["audio2"]
+
+            # --------------------------------------------------
+            # VALIDATE INPUTS
+            # --------------------------------------------------
+
+            try:
+                validate_extension(audio1.filename)
+            except ValueError as exc:
+                logger.warning("Invalid extension for audio1: %s", exc)
+                return error_response(str(exc), status=400)
+
+            try:
+                validate_extension(audio2.filename)
+            except ValueError as exc:
+                logger.warning("Invalid extension for audio2: %s", exc)
+                return error_response(str(exc), status=400)
+
+            try:
+                validate_file_size(audio1)
+            except ValueError as exc:
+                logger.warning("audio1 exceeds size limit: %s", exc)
+                return error_response(str(exc), status=413)
+
+            try:
+                validate_file_size(audio2)
+            except ValueError as exc:
+                logger.warning("audio2 exceeds size limit: %s", exc)
+                return error_response(str(exc), status=413)
 
             # --------------------------------------------------
             # GENERATE SAFE TEMP NAMES
@@ -56,18 +94,22 @@ def verify():
 
             
             result = verify_speaker(path1, path2)
-            # cleanup temp files
-            cleanup_file(path1)
-            cleanup_file(path2)
             # --------------------------------------------------
             # RETURN RESPONSE
             # --------------------------------------------------
-
-            return jsonify({
-                "message": "files uploaded successfully",
-                "audio1_path": str(path1),
-                "audio2_path": str(path2),
-                "verification_result": result
-            })
+            return success_response(
+                "verification completed",
+                {
+                    "audio1_path": str(path1),
+                    "audio2_path": str(path2),
+                    "verification_result": result,
+                },
+            )
         except Exception as e:
-            return jsonify({"error": str(e)}), 500
+            logger.exception("Verification request failed")
+            return error_response("verification failed", status=500)
+        finally:
+            if path1 is not None:
+                cleanup_file(path1)
+            if path2 is not None:
+                cleanup_file(path2)

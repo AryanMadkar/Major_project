@@ -1,12 +1,6 @@
 from app.models.ecapa import get_embedding
 from app.utils.similarity import cosine_similarity
-
-
-# ======================================================
-# THRESHOLD
-# ======================================================
-
-THRESHOLD = 0.72
+from app.core.config import SPEAKER_THRESHOLD
 
 # ======================================================
 # VERIFY
@@ -35,13 +29,13 @@ def verify_speaker(audio1, audio2):
     # DECISION
     # --------------------------------------------------
 
-    same_speaker = similarity >= THRESHOLD
+    same_speaker = similarity >= SPEAKER_THRESHOLD
 
     return {
 
         "similarity": round(similarity, 4),
 
-        "threshold": THRESHOLD,
+        "threshold": SPEAKER_THRESHOLD,
 
         "same_speaker": same_speaker
     }
