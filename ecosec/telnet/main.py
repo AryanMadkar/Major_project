@@ -49,7 +49,7 @@ def after_request(response):
 
 if __name__ == "__main__":
     
-    logger.info("Started ECAPA Server")
+    logger.info("Started TitaNet Server")
 
     app.run(
         host="0.0.0.0",

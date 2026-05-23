@@ -5,7 +5,10 @@ import torch.nn.functional as F
 
 warnings.filterwarnings("ignore")
 
-from app.core.config import NEMO_CACHE_DIR
+from app.core.config import (
+    NEMO_CACHE_DIR,
+    TARGET_SAMPLE_RATE
+)
 
 from app.utils.hashing import get_file_hash
 from app.audio.pipeline import process_audio
@@ -64,7 +67,7 @@ print("[TITANET] Warming up model...")
 
 dummy = torch.randn(
     1,
-    16000
+    TARGET_SAMPLE_RATE
 ).to(DEVICE)
 
 if DEVICE == "cuda":
@@ -74,7 +77,7 @@ with torch.inference_mode():
 
     _ = model.forward(
         input_signal=dummy,
-        input_signal_length=torch.tensor([16000]).to(DEVICE)
+        input_signal_length=torch.tensor([TARGET_SAMPLE_RATE]).to(DEVICE)
     )
 
 print("[TITANET] Warmup complete")
@@ -146,10 +149,12 @@ def get_embedding(audio_path):
 
     embedding = embedding.squeeze()
 
+    embedding_cpu = embedding.detach().float().cpu()
+
     # --------------------------------------------------
     # CACHE
     # --------------------------------------------------
 
-    embedding_cache[audio_hash] = embedding
+    embedding_cache[audio_hash] = embedding_cpu
 
-    return embedding
+    return embedding_cpu

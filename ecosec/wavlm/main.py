@@ -1,20 +1,25 @@
 from flask import Flask
 
 from app.api.routes import api
-from app.core.logger import logger
+
 from app.monitoring.health import health
-from app.middleware.security_headers import (
-    apply_security_headers
-)
 
 from app.middleware.request_id import (
     assign_request_id
 )
+
 from app.middleware.rate_limiter import (
     enforce_rate_limit
 )
+
+from app.middleware.security_headers import (
+    apply_security_headers
+)
+
+from app.core.logger import logger
+
 # ======================================================
-# CREATE FLASK APP
+# CREATE APP
 # ======================================================
 
 app = Flask(__name__)
@@ -24,7 +29,12 @@ app = Flask(__name__)
 # ======================================================
 
 app.register_blueprint(api)
+
 app.register_blueprint(health)
+
+# ======================================================
+# BEFORE REQUEST
+# ======================================================
 
 @app.before_request
 def before_request():
@@ -34,8 +44,13 @@ def before_request():
     rate_limit_response = enforce_rate_limit()
 
     if rate_limit_response is not None:
+
         return rate_limit_response
-    
+
+# ======================================================
+# AFTER REQUEST
+# ======================================================
+
 @app.after_request
 def after_request(response):
 
@@ -44,16 +59,17 @@ def after_request(response):
     )
 
 # ======================================================
-# RUN SERVER
+# MAIN
 # ======================================================
 
 if __name__ == "__main__":
-    
-    logger.info("Started XVector Server")
+
+    logger.info(
+        "Started WavLM Server"
+    )
 
     app.run(
         host="0.0.0.0",
-        port=8000,
-        debug=True
+        port=8001,
+        debug=False
     )
-    

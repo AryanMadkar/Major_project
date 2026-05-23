@@ -23,6 +23,10 @@ from speechbrain.inference import EncoderClassifier
 from app.utils.hashing import get_file_hash
 from app.audio.pipeline import process_audio
 from app.models.embedding_cache import embedding_cache
+from app.core.config import (
+    ECAPA_MODEL_NAME,
+    TARGET_SAMPLE_RATE
+)
 # ======================================================
 # DEVICE
 # ======================================================
@@ -40,7 +44,7 @@ print("[ECAPA] Loading model...")
 
 model = EncoderClassifier.from_hparams(
 
-    source="speechbrain/spkrec-ecapa-voxceleb",
+    source=ECAPA_MODEL_NAME,
 
     savedir="cache/ecapa",
 
@@ -72,7 +76,7 @@ print("[ECAPA] Warming up model...")
 
 dummy = torch.randn(
     1,
-    16000
+    TARGET_SAMPLE_RATE
 ).to(DEVICE)
 
 if DEVICE == "cuda":
@@ -151,7 +155,9 @@ def get_embedding(audio_path):
     # (1,1,192) -> (192,)
     embedding = embedding.squeeze()
 
-    # Cache the embedding
-    embedding_cache[audio_hash] = embedding
+    embedding_cpu = embedding.detach().float().cpu()
 
-    return embedding
+    # Cache the embedding
+    embedding_cache[audio_hash] = embedding_cpu
+
+    return embedding_cpu

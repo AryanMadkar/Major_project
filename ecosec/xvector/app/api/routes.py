@@ -121,7 +121,7 @@ def verify():
                     "verification_result": result,
                 },
             )
-        except ValueError as exc:
+        except (ValueError, RuntimeError) as exc:
             logger.warning(f"[{request_id}] Audio validation failed: {exc}")
             return error_response(str(exc), status=400)
         except Exception as e:

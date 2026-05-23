@@ -121,6 +121,11 @@ def verify():
                     "verification_result": result,
                 },
             )
+        except (ValueError, RuntimeError) as e:
+            logger.warning(
+                f"[{request_id}] Verification request rejected: {e}"
+            )
+            return error_response(str(e), status=400)
         except Exception as e:
             logger.exception(f"[{request_id}] Verification request failed")
             return error_response("verification failed", status=500)

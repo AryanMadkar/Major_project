@@ -2,9 +2,9 @@
 # VALIDATE SPEECH LENGTH
 # ======================================================
 
-MIN_AUDIO_SECONDS = 1.0
+from app.core.config import TARGET_SAMPLE_RATE
 
-TARGET_SR = 16000
+MIN_AUDIO_SECONDS = 1.0
 
 def validate_audio(waveform):
 
@@ -12,7 +12,7 @@ def validate_audio(waveform):
     Ensures audio contains enough speech.
     """
 
-    duration = waveform.shape[1] / TARGET_SR
+    duration = waveform.shape[1] / TARGET_SAMPLE_RATE
 
     if duration < MIN_AUDIO_SECONDS:
 

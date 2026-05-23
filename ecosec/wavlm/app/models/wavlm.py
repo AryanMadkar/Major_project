@@ -1,17 +1,41 @@
-import os
 import warnings
+
 import torch
 import torch.nn.functional as F
 
-warnings.filterwarnings("ignore")
+from transformers import (
+    WavLMForXVector,
+    AutoFeatureExtractor
+)
+
+from app.audio.pipeline import process_audio
 
 from app.utils.hashing import get_file_hash
-from app.audio.pipeline import process_audio
-from app.models.embedding_cache import embedding_cache
+
+from app.models.embedding_cache import (
+    embedding_cache
+)
+
 from app.core.config import (
+    WAVLM_MODEL_NAME,
     USE_FP16,
     TARGET_SAMPLE_RATE
 )
+
+# ======================================================
+# WARNINGS
+# ======================================================
+
+warnings.filterwarnings("ignore")
+
+# ======================================================
+# GPU OPTIMIZATION
+# ======================================================
+
+torch.backends.cuda.matmul.allow_tf32 = True
+torch.backends.cudnn.allow_tf32 = True
+
+torch.set_float32_matmul_precision("high")
 
 # ======================================================
 # DEVICE
@@ -19,45 +43,49 @@ from app.core.config import (
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-print(f"[XVECTOR] Device: {DEVICE}")
+print(f"[WAVLM] Device: {DEVICE}")
+
+# ======================================================
+# LOAD FEATURE EXTRACTOR
+# ======================================================
+
+print("[WAVLM] Loading feature extractor...")
+
+feature_extractor = AutoFeatureExtractor.from_pretrained(
+    WAVLM_MODEL_NAME
+)
 
 # ======================================================
 # LOAD MODEL
 # ======================================================
 
-from speechbrain.inference.speaker import EncoderClassifier
+print("[WAVLM] Loading model...")
 
-print("[XVECTOR] Loading model...")
-
-model = EncoderClassifier.from_hparams(
-    source="speechbrain/spkrec-resnet-voxceleb",
-    savedir="pretrained_models/xvector",
-    run_opts={
-        "device": DEVICE
-    }
+model = WavLMForXVector.from_pretrained(
+    WAVLM_MODEL_NAME
 )
 
 model = model.to(DEVICE)
 
 model.eval()
 
-print("[XVECTOR] Model loaded!")
+print("[WAVLM] Model loaded!")
 
 # ======================================================
-# OPTIONAL FP16
+# FP16
 # ======================================================
 
 if DEVICE == "cuda" and USE_FP16:
 
     model = model.half()
 
-    print("[XVECTOR] FP16 enabled")
+    print("[WAVLM] FP16 enabled")
 
 # ======================================================
 # WARMUP
 # ======================================================
 
-print("[XVECTOR] Warming up model...")
+print("[WAVLM] Warming up model...")
 
 dummy = torch.randn(
     1,
@@ -69,19 +97,21 @@ if DEVICE == "cuda" and USE_FP16:
 
 with torch.inference_mode():
 
-    _ = model.encode_batch(dummy)
+    warmup_outputs = model(dummy)
 
-print("[XVECTOR] Warmup complete")
+    _ = (
+        warmup_outputs.embeddings
+        if getattr(warmup_outputs, "embeddings", None) is not None
+        else warmup_outputs.last_hidden_state
+    )
+
+print("[WAVLM] Warmup complete")
 
 # ======================================================
-# EMBEDDING EXTRACTION
+# GET EMBEDDING
 # ======================================================
 
 def get_embedding(audio_path):
-
-    """
-    Extract x-vector speaker embedding.
-    """
 
     # --------------------------------------------------
     # HASH
@@ -90,7 +120,7 @@ def get_embedding(audio_path):
     audio_hash = get_file_hash(audio_path)
 
     # --------------------------------------------------
-    # CACHE HIT
+    # CACHE
     # --------------------------------------------------
 
     if audio_hash in embedding_cache:
@@ -107,13 +137,23 @@ def get_embedding(audio_path):
 
     waveform = process_audio(audio_path)
 
-    # shape:
-    # (1, samples)
+    waveform = waveform.squeeze(0)
 
-    waveform = waveform.to(DEVICE)
+    # --------------------------------------------------
+    # FEATURE EXTRACTION
+    # --------------------------------------------------
+
+    inputs = feature_extractor(
+        waveform.cpu().numpy(),
+        sampling_rate=TARGET_SAMPLE_RATE,
+        return_tensors="pt"
+    )
+
+    input_values = inputs.input_values.to(DEVICE)
 
     if DEVICE == "cuda" and USE_FP16:
-        waveform = waveform.half()
+
+        input_values = input_values.half()
 
     # --------------------------------------------------
     # INFERENCE
@@ -121,23 +161,29 @@ def get_embedding(audio_path):
 
     with torch.inference_mode():
 
-        embedding = model.encode_batch(
-            waveform
-        )
+        outputs = model(input_values)
+
+        embeddings = getattr(outputs, "embeddings", None)
+
+        if embeddings is None:
+
+            hidden_states = outputs.last_hidden_state
+
+            embeddings = hidden_states.mean(dim=1)
 
         embedding = F.normalize(
-            embedding,
+            embeddings,
             p=2,
             dim=-1
         )
 
     embedding = embedding.squeeze()
 
-    # --------------------------------------------------
-    # CACHE
-    # --------------------------------------------------
-
     embedding_cpu = embedding.detach().float().cpu()
+
+    # --------------------------------------------------
+    # CACHE SAVE
+    # --------------------------------------------------
 
     embedding_cache[audio_hash] = embedding_cpu
 
