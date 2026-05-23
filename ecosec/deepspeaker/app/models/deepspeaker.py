@@ -2,7 +2,7 @@ import torch
 torch.set_num_threads(2)
 import torch.nn.functional as F
 
-warnings.filterwarnings("ignore")
+# warnings.filterwarnings("ignore")
 
 from speechbrain.inference import EncoderClassifier
 
