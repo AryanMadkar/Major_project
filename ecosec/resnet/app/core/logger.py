@@ -8,7 +8,7 @@ from app.core.config import LOG_DIR
 # LOGGER
 # ======================================================
 
-logger = logging.getLogger("ecapa_server")
+logger = logging.getLogger("resnet_server")
 
 logger.setLevel(logging.INFO)
 

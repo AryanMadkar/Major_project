@@ -18,10 +18,10 @@ TEMP_DIR.mkdir(exist_ok=True)
 TARGET_SAMPLE_RATE = 16000
 
 # ======================================================
-# ECAPA SETTINGS
+# RESNET SETTINGS
 # ======================================================
 
-ECAPA_MODEL_NAME = "speechbrain/spkrec-resnet-voxceleb"
+RESNET_MODEL_NAME = "speechbrain/spkrec-xvector-voxceleb"
 
 # ======================================================
 # MODEL SETTINGS

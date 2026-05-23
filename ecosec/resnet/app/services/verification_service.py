@@ -33,6 +33,8 @@ def verify_speaker(audio1, audio2):
 
     return {
 
+        "model": "resnet",
+
         "similarity": round(similarity, 4),
 
         "threshold": SPEAKER_THRESHOLD,

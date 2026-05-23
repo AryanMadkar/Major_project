@@ -1,3 +1,5 @@
+import os
+
 from flask import Flask
 
 from app.api.routes import api
@@ -53,7 +55,7 @@ if __name__ == "__main__":
 
     app.run(
         host="0.0.0.0",
-        port=8000,
+        port=int(os.getenv("ESPACA_PORT", "8000")),
         debug=True
     )
     

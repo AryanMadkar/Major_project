@@ -1,3 +1,5 @@
+import os
+
 from flask import Flask
 
 from app.api.routes import api
@@ -49,11 +51,11 @@ def after_request(response):
 
 if __name__ == "__main__":
     
-    logger.info("Started XVector Server")
+    logger.info("Started ResNet Server")
 
     app.run(
         host="0.0.0.0",
-        port=8000,
+        port=int(os.getenv("RESNET_PORT", "8001")),
         debug=True
     )
     

@@ -10,7 +10,8 @@ from app.audio.pipeline import process_audio
 from app.models.embedding_cache import embedding_cache
 from app.core.config import (
     USE_FP16,
-    TARGET_SAMPLE_RATE
+    TARGET_SAMPLE_RATE,
+    RESNET_MODEL_NAME
 )
 
 # ======================================================
@@ -19,7 +20,7 @@ from app.core.config import (
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-print(f"[XVECTOR] Device: {DEVICE}")
+print(f"[RESNET] Device: {DEVICE}")
 
 # ======================================================
 # LOAD MODEL
@@ -27,10 +28,10 @@ print(f"[XVECTOR] Device: {DEVICE}")
 
 from speechbrain.inference.speaker import EncoderClassifier
 
-print("[XVECTOR] Loading model...")
+print("[RESNET] Loading model...")
 
 model = EncoderClassifier.from_hparams(
-    source="speechbrain/spkrec-resnet-voxceleb",
+    source="speechbrain/spkrec-xvect-voxceleb",
     savedir="pretrained_models/xvector",
     run_opts={
         "device": DEVICE
@@ -41,7 +42,7 @@ model = model.to(DEVICE)
 
 model.eval()
 
-print("[XVECTOR] Model loaded!")
+print("[RESNET] Model loaded!")
 
 # ======================================================
 # OPTIONAL FP16
@@ -51,13 +52,13 @@ if DEVICE == "cuda" and USE_FP16:
 
     model = model.half()
 
-    print("[XVECTOR] FP16 enabled")
+    print("[RESNET] FP16 enabled")
 
 # ======================================================
 # WARMUP
 # ======================================================
 
-print("[XVECTOR] Warming up model...")
+print("[RESNET] Warming up model...")
 
 dummy = torch.randn(
     1,
@@ -71,7 +72,7 @@ with torch.inference_mode():
 
     _ = model.encode_batch(dummy)
 
-print("[XVECTOR] Warmup complete")
+print("[RESNET] Warmup complete")
 
 # ======================================================
 # EMBEDDING EXTRACTION
