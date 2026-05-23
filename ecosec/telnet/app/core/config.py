@@ -62,3 +62,11 @@ MAX_FILE_SIZE_MB = 20
 LOG_DIR = BASE_DIR / "logs"
 
 LOG_DIR.mkdir(exist_ok=True)
+
+# ======================================================
+# VAD SETTINGS
+# ======================================================
+
+VAD_THRESHOLD = 0.5                  # Speech detection threshold (0.0 to 1.0)
+VAD_MIN_SPEECH_DURATION_MS = 250     # Minimum speech segment duration in milliseconds
+VAD_MIN_SILENCE_DURATION_MS = 100    # Minimum silence duration to split segments in milliseconds

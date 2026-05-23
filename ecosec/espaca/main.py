@@ -56,6 +56,7 @@ if __name__ == "__main__":
     app.run(
         host="0.0.0.0",
         port=int(os.getenv("ESPACA_PORT", "8000")),
-        debug=True
+        debug=True,
+        use_reloader=False
     )
     

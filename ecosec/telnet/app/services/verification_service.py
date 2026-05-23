@@ -1,6 +1,7 @@
 from app.models.telnet import get_embedding
 from app.utils.similarity import cosine_similarity
 from app.core.config import SPEAKER_THRESHOLD
+from app.core.logger import logger
 
 # ======================================================
 # VERIFY
@@ -9,12 +10,16 @@ from app.core.config import SPEAKER_THRESHOLD
 def verify_speaker(audio1, audio2):
 
     # --------------------------------------------------
-    # GET EMBEDDINGS
+    # EXTRACT EMBEDDINGS (sequential – PyTorch model
+    # inference is NOT thread-safe on CPU)
     # --------------------------------------------------
 
-    emb1 = get_embedding(audio1)
+    logger.info("[VERIFICATION] Extracting embeddings")
 
+    emb1 = get_embedding(audio1)
     emb2 = get_embedding(audio2)
+
+    logger.info("[VERIFICATION] Embedding extraction complete")
 
     # --------------------------------------------------
     # SIMILARITY
@@ -40,4 +45,4 @@ def verify_speaker(audio1, audio2):
         "threshold": SPEAKER_THRESHOLD,
 
         "same_speaker": same_speaker
-    }
+    }
