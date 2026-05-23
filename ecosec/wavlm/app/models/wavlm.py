@@ -1,6 +1,5 @@
-import warnings
-
 import torch
+torch.set_num_threads(2)
 import torch.nn.functional as F
 
 from transformers import (
@@ -26,7 +25,7 @@ from app.core.config import (
 # WARNINGS
 # ======================================================
 
-warnings.filterwarnings("ignore")
+# warnings.filterwarnings("ignore")
 
 # ======================================================
 # GPU OPTIMIZATION

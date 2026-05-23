@@ -1,8 +1,8 @@
-from io import BytesIO
-from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util import Retry
 
 from config import (
     AGGREGATION_THRESHOLD,
@@ -11,6 +11,25 @@ from config import (
     MODEL_ENDPOINTS,
     REQUEST_TIMEOUT_SECONDS,
 )
+
+# ======================================================
+# OPTIMIZED HTTP SESSION POOL WITH KEEPALIVE
+# ======================================================
+
+session = requests.Session()
+# Create a robust pool with enough connections for concurrent model requests
+adapter = HTTPAdapter(
+    pool_connections=10,
+    pool_maxsize=20,
+    max_retries=Retry(
+        total=2,
+        backoff_factor=0.05,
+        status_forcelist=[502, 503, 504],
+        raise_on_status=False
+    )
+)
+session.mount("http://", adapter)
+session.mount("https://", adapter)
 
 # ======================================================
 # VALIDATION
@@ -65,7 +84,7 @@ def _call_model(endpoint_config, audio1_bytes, audio2_bytes, audio1_name, audio2
         "audio2": (audio2_name, BytesIO(audio2_bytes), "application/octet-stream"),
     }
 
-    response = requests.post(
+    response = session.post(
         endpoint_config["url"],
         files=files,
         timeout=REQUEST_TIMEOUT_SECONDS,
@@ -89,9 +108,16 @@ def orchestrate_verification(audio1, audio2):
     audio1.seek(0)
     audio2.seek(0)
 
-    total_weight = 0.0
-    weighted_vote_sum = 0.0
-    weighted_similarity_sum = 0.0
+    # Accumulators for Standard Weighted Voting
+    total_standard_weight = 0.0
+    standard_vote_sum = 0.0
+    standard_similarity_sum = 0.0
+
+    # Accumulators for Power Weighted Voting (Exponential scaling)
+    POWER_EXPONENT = 2.0
+    total_power_weight = 0.0
+    power_vote_sum = 0.0
+    power_similarity_sum = 0.0
 
     model_results = []
     model_errors = []
@@ -100,8 +126,8 @@ def orchestrate_verification(audio1, audio2):
 
     with ThreadPoolExecutor(max_workers=len(MODEL_ENDPOINTS)) as executor:
 
+        # 1. Send all audio requests concurrently at the same time
         for endpoint_config in MODEL_ENDPOINTS:
-
             futures[executor.submit(
                 _call_model,
                 endpoint_config,
@@ -111,58 +137,88 @@ def orchestrate_verification(audio1, audio2):
                 audio2.filename,
             )] = endpoint_config
 
-        for future in as_completed(futures):
+        # 2. Wait for all agents with a maximum hard timeout of 60 seconds (1 minute)
+        try:
+            for future in as_completed(futures, timeout=60.0):
+                endpoint_config = futures[future]
+                weight = float(endpoint_config["weight"])
 
-            endpoint_config = futures[future]
-            weight = float(endpoint_config["weight"])
+                try:
+                    model_result = future.result()
 
-            try:
+                    similarity = model_result.get("similarity")
+                    same_speaker = model_result.get("same_speaker")
 
-                model_result = future.result()
+                    model_results.append({
+                        "model": model_result.get("model", endpoint_config["name"]),
+                        "weight": weight,
+                        "similarity": similarity,
+                        "same_speaker": same_speaker,
+                        "threshold": model_result.get("threshold"),
+                        "status": "ok",
+                        "raw": model_result.get("raw", {}),
+                    })
 
-                similarity = model_result.get("similarity")
-                same_speaker = model_result.get("same_speaker")
+                    # Calculate standard weighted voting stats
+                    if same_speaker is not None:
+                        standard_vote_sum += weight * (1.0 if same_speaker else 0.0)
+                        total_standard_weight += weight
+                    if similarity is not None:
+                        standard_similarity_sum += weight * float(similarity)
 
-                model_results.append({
-                    "model": model_result.get("model", endpoint_config["name"]),
-                    "weight": weight,
-                    "similarity": similarity,
-                    "same_speaker": same_speaker,
-                    "threshold": model_result.get("threshold"),
-                    "status": "ok",
-                    "raw": model_result.get("raw", {}),
-                })
+                    # Calculate power weighted voting stats (raises weights to a power)
+                    power_weight = weight ** POWER_EXPONENT
+                    if same_speaker is not None:
+                        power_vote_sum += power_weight * (1.0 if same_speaker else 0.0)
+                        total_power_weight += power_weight
+                    if similarity is not None:
+                        power_similarity_sum += power_weight * float(similarity)
 
-                if same_speaker is not None:
-                    weighted_vote_sum += weight * (1.0 if same_speaker else 0.0)
-                    total_weight += weight
+                except Exception as exc:
+                    model_errors.append({
+                        "model": endpoint_config["name"],
+                        "weight": weight,
+                        "status": "error",
+                        "error": str(exc),
+                    })
+        except TimeoutError:
+            # Handle orchestration timeout: cancel pending requests and report them as timeouts
+            for future, endpoint_config in futures.items():
+                if not future.done():
+                    future.cancel()
+                    model_errors.append({
+                        "model": endpoint_config["name"],
+                        "weight": float(endpoint_config["weight"]),
+                        "status": "error",
+                        "error": "Request timed out (exceeded the maximum 60 seconds limit)",
+                    })
 
-                if similarity is not None:
-                    weighted_similarity_sum += weight * float(similarity)
+    if total_power_weight <= 0:
+        raise RuntimeError("All model requests failed or timed out")
 
-            except Exception as exc:
+    # 3. Final calculations
+    standard_vote = standard_vote_sum / total_standard_weight if total_standard_weight > 0 else 0.0
+    standard_similarity = standard_similarity_sum / total_standard_weight if total_standard_weight > 0 else 0.0
 
-                model_errors.append({
-                    "model": endpoint_config["name"],
-                    "weight": weight,
-                    "status": "error",
-                    "error": str(exc),
-                })
+    power_vote = power_vote_sum / total_power_weight
+    power_similarity = power_similarity_sum / total_power_weight
 
-    if total_weight <= 0:
-
-        raise RuntimeError("All model requests failed")
-
-    weighted_vote = weighted_vote_sum / total_weight
-    weighted_similarity = weighted_similarity_sum / total_weight
-
-    final_same_speaker = weighted_vote >= AGGREGATION_THRESHOLD
+    # Give final result using the Power Weighted Vote
+    final_same_speaker = power_vote >= AGGREGATION_THRESHOLD
 
     return {
         "final_same_speaker": final_same_speaker,
         "final_decision": "same_speaker" if final_same_speaker else "different_speaker",
-        "weighted_vote": round(weighted_vote, 4),
-        "weighted_similarity": round(weighted_similarity, 4),
+        
+        # Power weighted voting results (Used for final decision)
+        "power_weighted_vote": round(power_vote, 4),
+        "power_weighted_similarity": round(power_similarity, 4),
+        "power_exponent": POWER_EXPONENT,
+
+        # Standard weighted voting comparison
+        "standard_weighted_vote": round(standard_vote, 4),
+        "standard_weighted_similarity": round(standard_similarity, 4),
+        
         "aggregation_threshold": AGGREGATION_THRESHOLD,
         "models": model_results,
         "errors": model_errors,

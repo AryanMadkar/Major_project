@@ -1,0 +1,100 @@
+version: '3.8'
+
+services:
+  espaca:
+    build:
+      context: ./ecosec/espaca
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - espaca_cache:/app/cache
+      - espaca_temp:/app/temp
+    environment:
+      - ESPACA_PORT=8000
+    restart: unless-stopped
+
+  resnet:
+    build:
+      context: ./ecosec/resnet
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8001"
+    volumes:
+      - resnet_cache:/app/pretrained_models
+      - resnet_temp:/app/temp
+    environment:
+      - RESNET_PORT=8001
+    restart: unless-stopped
+
+  telnet:
+    build:
+      context: ./ecosec/telnet
+      dockerfile: Dockerfile
+    ports:
+      - "8002:8002"
+    volumes:
+      - telnet_cache:/app/cache
+      - telnet_temp:/app/temp
+    environment:
+      - TELNET_PORT=8002
+    restart: unless-stopped
+
+  wavlm:
+    build:
+      context: ./ecosec/wavlm
+      dockerfile: Dockerfile
+    ports:
+      - "8003:8003"
+    volumes:
+      - wavlm_cache:/root/.cache/huggingface
+      - wavlm_temp:/app/temp
+    environment:
+      - WAVLM_PORT=8003
+    restart: unless-stopped
+
+  deepspeaker:
+    build:
+      context: ./ecosec/deepspeaker
+      dockerfile: Dockerfile
+    ports:
+      - "8006:8006"
+    volumes:
+      - deepspeaker_cache:/app/cache
+      - deepspeaker_temp:/app/temp
+    environment:
+      - DEEPSPEAKER_PORT=8006
+    restart: unless-stopped
+
+  orchestration:
+    build:
+      context: ./ecosec/orchestration
+      dockerfile: Dockerfile
+    ports:
+      - "8010:8010"
+    environment:
+      - ORCHESTRATION_PORT=8010
+      - ESPACA_VERIFY_URL=http://espaca:8000/verify
+      - RESNET_VERIFY_URL=http://resnet:8001/verify
+      - TELNET_VERIFY_URL=http://telnet:8002/verify
+      - WAVLM_VERIFY_URL=http://wavlm:8003/verify
+      - DEEPSPEAKER_VERIFY_URL=http://deepspeaker:8006/verify
+    depends_on:
+      - espaca
+      - resnet
+      - telnet
+      - wavlm
+      - deepspeaker
+    restart: unless-stopped
+
+volumes:
+  espaca_cache:
+  espaca_temp:
+  resnet_cache:
+  resnet_temp:
+  telnet_cache:
+  telnet_temp:
+  wavlm_cache:
+  wavlm_temp:
+  deepspeaker_cache:
+  deepspeaker_temp:

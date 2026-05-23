@@ -51,6 +51,16 @@ def after_request(response):
 
 if __name__ == "__main__":
     
+    # Clean up temp folder on startup
+    from app.core.config import TEMP_DIR
+    if TEMP_DIR.exists():
+        for item in TEMP_DIR.iterdir():
+            try:
+                if item.is_file():
+                    item.unlink()
+            except Exception:
+                pass
+
     logger.info("Started ECAPA Server")
 
     app.run(

@@ -1,9 +1,9 @@
 import os
-import warnings
 import torch
+torch.set_num_threads(2)
 import torch.nn.functional as F
 
-warnings.filterwarnings("ignore")
+# warning.filterwarnings("ignore")
 
 from app.utils.hashing import get_file_hash
 from app.audio.pipeline import process_audio
