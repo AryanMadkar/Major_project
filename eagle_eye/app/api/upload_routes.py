@@ -1,5 +1,6 @@
 import uuid
 from pathlib import Path
+from shutil import rmtree
 from app.services.video_metadata import (
     extract_video_metadata
 )
@@ -16,7 +17,18 @@ from app.services.face_detector import (
 )
 from werkzeug.utils import secure_filename
 
+from app.services.embedding_extractor import (
+    extract_embeddings
+)
 
+from app.services.identity_storage import (
+    save_identity,
+    load_identity
+)
+
+from app.services.similarity_engine import (
+    compare_embeddings
+)
 upload_bp = Blueprint(
     "upload_bp",
     __name__
@@ -32,6 +44,46 @@ ALLOWED_EXTENSIONS = {
 }
 
 
+def get_request_payload():
+    payload = {}
+
+    form_data = request.form.to_dict()
+
+    if form_data:
+        payload.update(form_data)
+
+    json_data = request.get_json(silent=True)
+
+    if isinstance(json_data, dict):
+        payload.update(json_data)
+
+    return payload
+
+
+def average_embeddings(embeddings):
+    if not embeddings:
+        return None
+
+    dimensions = len(embeddings[0])
+
+    return [
+        sum(embedding[index] for embedding in embeddings) / len(embeddings)
+        for index in range(dimensions)
+    ]
+
+
+def cleanup_path(path_value):
+    if not path_value:
+        return
+
+    path = Path(path_value)
+
+    if path.is_dir():
+        rmtree(path, ignore_errors=True)
+    else:
+        path.unlink(missing_ok=True)
+
+
 def validate_extension(filename):
     extension = Path(filename).suffix.lower()
 
@@ -43,7 +95,8 @@ def validate_extension(filename):
 
 def save_uploaded_video(
     video_file,
-    upload_type
+    upload_type,
+    user_id=None
 ):
     original_filename = secure_filename(
         video_file.filename
@@ -149,12 +202,105 @@ def save_uploaded_video(
             video_id=video_id
         )
     except Exception as e:
-        save_path.unlink(missing_ok=True)
+        cleanup_path(save_path)
         return {
             "success": False,
             "message": "Failed to detect faces in extracted frames",
             "error": str(e)
         }, 400
+
+    aligned_directory = detected_faces.get(
+        "aligned_directory"
+    )
+
+    try:
+        embedding_data = extract_embeddings(
+            aligned_faces_dir=aligned_directory
+        )
+    except Exception as e:
+        cleanup_path(save_path)
+        cleanup_path(detected_faces.get("faces_directory"))
+        cleanup_path(aligned_directory)
+        return {
+            "success": False,
+            "message": "Failed to extract embeddings from aligned faces",
+            "error": str(e)
+        }, 400
+
+    if not embedding_data.get("success") or not embedding_data.get(
+        "total_embeddings"
+    ):
+        cleanup_path(save_path)
+        cleanup_path(detected_faces.get("faces_directory"))
+        cleanup_path(aligned_directory)
+        return {
+            "success": False,
+            "message": "No usable embeddings were generated",
+            "embeddings": embedding_data
+        }, 400
+
+    master_embedding = (
+        embedding_data["embeddings"][0]
+        ["embedding"]
+    )
+
+    if master_embedding is None:
+        cleanup_path(save_path)
+        cleanup_path(detected_faces.get("faces_directory"))
+        cleanup_path(aligned_directory)
+        return {
+            "success": False,
+            "message": "Unable to build a master embedding"
+        }, 400
+
+    if upload_type == "registration":
+        save_identity(
+            user_id=video_id,
+            embedding=master_embedding
+        )
+
+        return {
+            "success": True,
+            "video_id": video_id,
+            "embedding_count": embedding_data["total_embeddings"],
+            "status": "identity_registered"
+        }, 200
+
+    if upload_type == "verification":
+        stored_identity = load_identity(
+            request.form.get(
+                "user_id"
+            )
+        )
+
+        if stored_identity is None:
+            cleanup_path(save_path)
+            cleanup_path(detected_faces.get("faces_directory"))
+            cleanup_path(aligned_directory)
+            return {
+                "success": False,
+                "message": "User not found"
+            }, 404
+
+        similarity = compare_embeddings(
+            master_embedding,
+            stored_identity["embedding"]
+        )
+
+        matched = similarity > 0.75
+
+        return {
+            "success": True,
+            "similarity": round(
+                similarity,
+                4
+            ),
+            "authenticated": matched
+        }, 200
+
+    cleanup_path(save_path)
+    cleanup_path(detected_faces.get("faces_directory"))
+    cleanup_path(aligned_directory)
 
     return {
         "success": True,
@@ -164,7 +310,8 @@ def save_uploaded_video(
         "status": "uploaded",
         "metadata": metadata,
         "frames": frames,
-        "faces": detected_faces
+        "faces": detected_faces,
+        "embeddings": embedding_data
     }, 200
 
 
@@ -206,7 +353,8 @@ def verify_video():
 
     response, status_code = save_uploaded_video(
         video_file=video_file,
-        upload_type="verification"
+        upload_type="verification",
+        user_id=request.form.get("user_id")
     )
 
     return jsonify(response), status_code
