@@ -140,14 +140,21 @@ def save_uploaded_video(
             "message": "Failed to extract frames from video",
             "frames_error": frames.get("message")
         }, 400
-        
+
     try:
         detected_faces = detect_faces(
-            frames_directory=frame_data[
+            frames_directory=frames[
                 "frames_directory"
             ],
             video_id=video_id
         )
+    except Exception as e:
+        save_path.unlink(missing_ok=True)
+        return {
+            "success": False,
+            "message": "Failed to detect faces in extracted frames",
+            "error": str(e)
+        }, 400
 
     return {
         "success": True,
