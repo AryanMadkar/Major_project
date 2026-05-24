@@ -3,7 +3,9 @@ from pathlib import Path
 from app.services.video_metadata import (
     extract_video_metadata
 )
-
+from app.services.frame_extractor import (
+    extract_frames
+)
 from flask import (
     Blueprint,
     jsonify,
@@ -94,11 +96,47 @@ def save_uploaded_video(
             "error": str(e)
         }, 400
 
-    if not metadata.get("success"):
+    # Ensure the video meets validation requirements before expensive frame extraction
+    if not metadata.get("success") or not metadata.get("is_valid"):
         save_path.unlink(missing_ok=True)
         return {
             "success": False,
-            "message": "Corrupted or invalid video"
+            "message": "Corrupted or invalid video",
+            "metadata": metadata
+        }, 400
+
+    try:
+        frames = extract_frames(
+            video_path=str(save_path),
+            video_id=video_id
+        )
+    except Exception as e:
+        save_path.unlink(missing_ok=True)
+        return {
+            "success": False,
+            "message": "Failed to extract frames from video",
+            "error": str(e)
+        }, 400
+
+    # If frame extraction returned a failure dict, clean up and return error
+    if isinstance(frames, dict) and not frames.get("success"):
+        # remove saved video
+        save_path.unlink(missing_ok=True)
+        # attempt to remove any partially written frames directory
+        frames_dir = frames.get("frames_directory")
+        if frames_dir:
+            try:
+                # remove files inside dir if present
+                from shutil import rmtree
+
+                rmtree(frames_dir, ignore_errors=True)
+            except Exception:
+                pass
+
+        return {
+            "success": False,
+            "message": "Failed to extract frames from video",
+            "frames_error": frames.get("message")
         }, 400
 
     return {
@@ -107,7 +145,8 @@ def save_uploaded_video(
         "filename": saved_filename,
         "size_mb": file_size_mb,
         "status": "uploaded",
-        "metadata": metadata
+        "metadata": metadata,
+        "frames": frames
     }, 200
 
 
