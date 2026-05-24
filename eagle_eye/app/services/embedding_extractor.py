@@ -2,39 +2,17 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-import torch
-
-from sklearn.preprocessing import normalize
+from insightface.app import FaceAnalysis
 
 
-class SimpleEmbeddingModel:
+app = FaceAnalysis(
+    providers=["CPUExecutionProvider"]
+)
 
-    def __init__(self):
-
-        self.embedding_size = 512
-
-    def generate_embedding(
-        self,
-        image
-    ):
-
-        resized = cv2.resize(
-            image,
-            (112, 112)
-        )
-
-        embedding = np.random.rand(
-            self.embedding_size
-        )
-
-        embedding = normalize(
-            embedding.reshape(1, -1)
-        )[0]
-
-        return embedding
-
-
-model = SimpleEmbeddingModel()
+app.prepare(
+    ctx_id=0,
+    det_size=(640, 640)
+)
 
 
 def extract_embeddings(
@@ -55,17 +33,29 @@ def extract_embeddings(
             str(face_path)
         )
 
-        embedding = (
-            model.generate_embedding(
-                image
-            )
+        if image is None:
+            continue
+
+        faces = app.get(image)
+
+        if len(faces) == 0:
+            continue
+
+        face = faces[0]
+
+        embedding = face.embedding
+        embedding_norm = np.linalg.norm(
+            embedding
         )
 
         embeddings.append({
             "face_file":
                 face_path.name,
             "embedding":
-                embedding.tolist()
+                embedding.tolist(),
+            "embedding_norm": float(
+                embedding_norm
+            )
         })
 
     return {

@@ -21,6 +21,10 @@ from app.services.embedding_extractor import (
     extract_embeddings
 )
 
+from app.services.embedding_fusion import (
+    fuse_embeddings
+)
+
 from app.services.identity_storage import (
     save_identity,
     load_identity
@@ -239,9 +243,18 @@ def save_uploaded_video(
             "embeddings": embedding_data
         }, 400
 
-    master_embedding = (
-        embedding_data["embeddings"][0]
-        ["embedding"]
+    all_embeddings = []
+
+    for item in embedding_data[
+        "embeddings"
+    ]:
+
+        all_embeddings.append(
+            item["embedding"]
+        )
+
+    master_embedding = fuse_embeddings(
+        all_embeddings
     )
 
     if master_embedding is None:
@@ -254,14 +267,24 @@ def save_uploaded_video(
         }, 400
 
     if upload_type == "registration":
+        if not user_id:
+            cleanup_path(save_path)
+            cleanup_path(detected_faces.get("faces_directory"))
+            cleanup_path(aligned_directory)
+            return {
+                "success": False,
+                "message": "user_id is required for registration"
+            }, 400
+
         save_identity(
-            user_id=video_id,
-            embedding=master_embedding
+            user_id=user_id,
+            embedding=master_embedding.tolist()
         )
 
         return {
             "success": True,
             "video_id": video_id,
+            "user_id": user_id,
             "embedding_count": embedding_data["total_embeddings"],
             "status": "identity_registered"
         }, 200
@@ -282,12 +305,30 @@ def save_uploaded_video(
                 "message": "User not found"
             }, 404
 
+        verification_embeddings = []
+
+        for item in embedding_data[
+            "embeddings"
+        ]:
+
+            verification_embeddings.append(
+                item["embedding"]
+            )
+
+        new_embedding = fuse_embeddings(
+            verification_embeddings
+        )
+
         similarity = compare_embeddings(
-            master_embedding,
-            stored_identity["embedding"]
+            stored_identity["embedding"],
+            new_embedding.tolist()
         )
 
         matched = similarity > 0.75
+
+        embedding_count = len(
+            verification_embeddings
+        )
 
         return {
             "success": True,
@@ -295,7 +336,8 @@ def save_uploaded_video(
                 similarity,
                 4
             ),
-            "authenticated": matched
+            "authenticated": matched,
+            "embedding_count": embedding_count
         }, 200
 
     cleanup_path(save_path)
@@ -328,10 +370,12 @@ def register_video():
         }), 400
 
     video_file = request.files["video"]
+    payload = get_request_payload()
 
     response, status_code = save_uploaded_video(
         video_file=video_file,
-        upload_type="registration"
+        upload_type="registration",
+        user_id=payload.get("user_id")
     )
 
     return jsonify(response), status_code
