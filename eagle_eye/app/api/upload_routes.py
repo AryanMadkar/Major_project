@@ -1,5 +1,8 @@
 import uuid
 from pathlib import Path
+from app.services.video_metadata import (
+    extract_video_metadata
+)
 
 from flask import (
     Blueprint,
@@ -67,19 +70,44 @@ def save_uploaded_video(
 
     save_path = save_dir / saved_filename
 
-    video_file.save(save_path)
+    try:
+        video_file.save(str(save_path))
+    except Exception as e:
+        return {
+            "success": False,
+            "message": "Failed to save uploaded video",
+            "error": str(e)
+        }, 500
 
     file_size_mb = round(
         save_path.stat().st_size / (1024 * 1024),
         2
     )
 
+    try:
+        metadata = extract_video_metadata(str(save_path))
+    except Exception as e:
+        save_path.unlink(missing_ok=True)
+        return {
+            "success": False,
+            "message": "Failed to extract video metadata",
+            "error": str(e)
+        }, 400
+
+    if not metadata.get("success"):
+        save_path.unlink(missing_ok=True)
+        return {
+            "success": False,
+            "message": "Corrupted or invalid video"
+        }, 400
+
     return {
         "success": True,
         "video_id": video_id,
         "filename": saved_filename,
         "size_mb": file_size_mb,
-        "status": "uploaded"
+        "status": "uploaded",
+        "metadata": metadata
     }, 200
 
 
