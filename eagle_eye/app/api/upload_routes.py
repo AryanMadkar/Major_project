@@ -15,6 +15,9 @@ from flask import (
 from app.services.face_detector import (
     detect_faces
 )
+from app.services.liveness_detector import (
+    analyze_liveness
+)
 from werkzeug.utils import secure_filename
 
 from app.services.embedding_extractor import (
@@ -198,6 +201,29 @@ def save_uploaded_video(
             "frames_error": frames.get("message")
         }, 400
 
+    liveness_data = None
+
+    if upload_type == "verification":
+        try:
+            liveness_data = analyze_liveness(
+                frames["frames_directory"]
+            )
+        except Exception as e:
+            cleanup_path(save_path)
+            return {
+                "success": False,
+                "message": "Failed to analyze liveness",
+                "error": str(e)
+            }, 400
+
+        if not liveness_data.get("is_live"):
+            cleanup_path(save_path)
+            return {
+                "success": False,
+                "message": "Liveness check failed",
+                "liveness": liveness_data
+            }, 401
+
     try:
         detected_faces = detect_faces(
             frames_directory=frames[
@@ -337,7 +363,8 @@ def save_uploaded_video(
                 4
             ),
             "authenticated": matched,
-            "embedding_count": embedding_count
+            "embedding_count": embedding_count,
+            "liveness": liveness_data
         }, 200
 
     cleanup_path(save_path)
