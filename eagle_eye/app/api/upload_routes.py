@@ -11,7 +11,9 @@ from flask import (
     jsonify,
     request
 )
-
+from app.services.face_detector import (
+    detect_faces
+)
 from werkzeug.utils import secure_filename
 
 
@@ -138,6 +140,14 @@ def save_uploaded_video(
             "message": "Failed to extract frames from video",
             "frames_error": frames.get("message")
         }, 400
+        
+    try:
+        detected_faces = detect_faces(
+            frames_directory=frame_data[
+                "frames_directory"
+            ],
+            video_id=video_id
+        )
 
     return {
         "success": True,
@@ -146,7 +156,8 @@ def save_uploaded_video(
         "size_mb": file_size_mb,
         "status": "uploaded",
         "metadata": metadata,
-        "frames": frames
+        "frames": frames,
+        "faces": detected_faces
     }, 200
 
 
