@@ -67,6 +67,10 @@ def get_request_payload():
     return payload
 
 
+def get_identity_key(payload):
+    return payload.get("email") or payload.get("user_id")
+
+
 def average_embeddings(embeddings):
     if not embeddings:
         return None
@@ -91,6 +95,67 @@ def cleanup_path(path_value):
         path.unlink(missing_ok=True)
 
 
+def cleanup_artifacts(
+    save_path=None,
+    frames_dir=None,
+    faces_dir=None,
+    aligned_dir=None
+):
+    cleanup_path(save_path)
+    cleanup_path(frames_dir)
+    cleanup_path(faces_dir)
+    cleanup_path(aligned_dir)
+
+
+def fail_response(
+    message,
+    status_code,
+    stage,
+    **details
+):
+    response = {
+        "success": False,
+        "message": message,
+        "stage": stage
+    }
+
+    if details:
+        response["details"] = details
+
+    return response, status_code
+
+
+def build_embedding_data(detected_faces, aligned_directory):
+    detector_embeddings = []
+
+    for face_item in detected_faces.get("faces", []):
+        embedding = face_item.get("embedding")
+
+        if embedding:
+            detector_embeddings.append({
+                "face_file": face_item.get("face_file"),
+                "embedding": embedding,
+                "source": "detector"
+            })
+
+    if detector_embeddings:
+        return {
+            "success": True,
+            "total_embeddings": len(detector_embeddings),
+            "embeddings": detector_embeddings,
+            "source": "detector"
+        }
+
+    embedding_data = extract_embeddings(
+        aligned_faces_dir=aligned_directory
+    )
+
+    if embedding_data.get("success"):
+        embedding_data["source"] = "aligned_faces"
+
+    return embedding_data
+
+
 def validate_extension(filename):
     extension = Path(filename).suffix.lower()
 
@@ -105,6 +170,13 @@ def save_uploaded_video(
     upload_type,
     user_id=None
 ):
+    if video_file is None or not getattr(video_file, "filename", None):
+        return fail_response(
+            "No video file provided",
+            400,
+            "request"
+        )
+
     original_filename = secure_filename(
         video_file.filename
     )
@@ -114,10 +186,13 @@ def save_uploaded_video(
     )
 
     if not extension:
-        return {
-            "success": False,
-            "message": "Invalid video format"
-        }, 400
+        return fail_response(
+            "Invalid video format",
+            400,
+            "validation",
+            allowed_extensions=sorted(ALLOWED_EXTENSIONS),
+            filename=original_filename
+        )
 
     video_id = str(uuid.uuid4())
 
@@ -137,11 +212,13 @@ def save_uploaded_video(
     try:
         video_file.save(str(save_path))
     except Exception as e:
-        return {
-            "success": False,
-            "message": "Failed to save uploaded video",
-            "error": str(e)
-        }, 500
+        cleanup_path(save_path)
+        return fail_response(
+            "Failed to save uploaded video",
+            500,
+            "save_video",
+            error=str(e)
+        )
 
     file_size_mb = round(
         save_path.stat().st_size / (1024 * 1024),
@@ -151,21 +228,23 @@ def save_uploaded_video(
     try:
         metadata = extract_video_metadata(str(save_path))
     except Exception as e:
-        save_path.unlink(missing_ok=True)
-        return {
-            "success": False,
-            "message": "Failed to extract video metadata",
-            "error": str(e)
-        }, 400
+        cleanup_path(save_path)
+        return fail_response(
+            "Failed to extract video metadata",
+            400,
+            "metadata",
+            error=str(e)
+        )
 
     # Ensure the video meets validation requirements before expensive frame extraction
     if not metadata.get("success") or not metadata.get("is_valid"):
-        save_path.unlink(missing_ok=True)
-        return {
-            "success": False,
-            "message": "Corrupted or invalid video",
-            "metadata": metadata
-        }, 400
+        cleanup_path(save_path)
+        return fail_response(
+            "Corrupted or invalid video",
+            422,
+            "metadata",
+            metadata=metadata
+        )
 
     try:
         frames = extract_frames(
@@ -173,33 +252,24 @@ def save_uploaded_video(
             video_id=video_id
         )
     except Exception as e:
-        save_path.unlink(missing_ok=True)
-        return {
-            "success": False,
-            "message": "Failed to extract frames from video",
-            "error": str(e)
-        }, 400
+        cleanup_path(save_path)
+        return fail_response(
+            "Failed to extract frames from video",
+            500,
+            "frame_extraction",
+            error=str(e)
+        )
 
     # If frame extraction returned a failure dict, clean up and return error
     if isinstance(frames, dict) and not frames.get("success"):
-        # remove saved video
-        save_path.unlink(missing_ok=True)
-        # attempt to remove any partially written frames directory
         frames_dir = frames.get("frames_directory")
-        if frames_dir:
-            try:
-                # remove files inside dir if present
-                from shutil import rmtree
-
-                rmtree(frames_dir, ignore_errors=True)
-            except Exception:
-                pass
-
-        return {
-            "success": False,
-            "message": "Failed to extract frames from video",
-            "frames_error": frames.get("message")
-        }, 400
+        cleanup_artifacts(save_path, frames_dir=frames_dir)
+        return fail_response(
+            "Failed to extract frames from video",
+            422,
+            "frame_extraction",
+            frames_error=frames.get("message")
+        )
 
     liveness_data = None
 
@@ -209,20 +279,22 @@ def save_uploaded_video(
                 frames["frames_directory"]
             )
         except Exception as e:
-            cleanup_path(save_path)
-            return {
-                "success": False,
-                "message": "Failed to analyze liveness",
-                "error": str(e)
-            }, 400
+            cleanup_artifacts(save_path, frames_dir=frames.get("frames_directory"))
+            return fail_response(
+                "Failed to analyze liveness",
+                500,
+                "liveness",
+                error=str(e)
+            )
 
         if not liveness_data.get("is_live"):
-            cleanup_path(save_path)
-            return {
-                "success": False,
-                "message": "Liveness check failed",
-                "liveness": liveness_data
-            }, 401
+            cleanup_artifacts(save_path, frames_dir=frames.get("frames_directory"))
+            return fail_response(
+                "Liveness check failed",
+                401,
+                "liveness",
+                liveness=liveness_data
+            )
 
     try:
         detected_faces = detect_faces(
@@ -232,42 +304,53 @@ def save_uploaded_video(
             video_id=video_id
         )
     except Exception as e:
-        cleanup_path(save_path)
-        return {
-            "success": False,
-            "message": "Failed to detect faces in extracted frames",
-            "error": str(e)
-        }, 400
+        cleanup_artifacts(save_path, frames_dir=frames.get("frames_directory"))
+        return fail_response(
+            "Failed to detect faces in extracted frames",
+            500,
+            "face_detection",
+            error=str(e)
+        )
 
     aligned_directory = detected_faces.get(
         "aligned_directory"
     )
 
     try:
-        embedding_data = extract_embeddings(
-            aligned_faces_dir=aligned_directory
+        embedding_data = build_embedding_data(
+            detected_faces,
+            aligned_directory
         )
     except Exception as e:
-        cleanup_path(save_path)
-        cleanup_path(detected_faces.get("faces_directory"))
-        cleanup_path(aligned_directory)
-        return {
-            "success": False,
-            "message": "Failed to extract embeddings from aligned faces",
-            "error": str(e)
-        }, 400
+        cleanup_artifacts(
+            save_path,
+            frames_dir=frames.get("frames_directory"),
+            faces_dir=detected_faces.get("faces_directory"),
+            aligned_dir=aligned_directory
+        )
+        return fail_response(
+            "Failed to extract embeddings from aligned faces",
+            500,
+            "embedding_extraction",
+            error=str(e)
+        )
 
     if not embedding_data.get("success") or not embedding_data.get(
         "total_embeddings"
     ):
-        cleanup_path(save_path)
-        cleanup_path(detected_faces.get("faces_directory"))
-        cleanup_path(aligned_directory)
-        return {
-            "success": False,
-            "message": "No usable embeddings were generated",
-            "embeddings": embedding_data
-        }, 400
+        cleanup_artifacts(
+            save_path,
+            frames_dir=frames.get("frames_directory"),
+            faces_dir=detected_faces.get("faces_directory"),
+            aligned_dir=aligned_directory
+        )
+        return fail_response(
+            "No usable embeddings were generated",
+            422,
+            "embedding_extraction",
+            embeddings=embedding_data,
+            hint="Detector embeddings were unavailable and aligned-face re-extraction also failed"
+        )
 
     all_embeddings = []
 
@@ -284,23 +367,31 @@ def save_uploaded_video(
     )
 
     if master_embedding is None:
-        cleanup_path(save_path)
-        cleanup_path(detected_faces.get("faces_directory"))
-        cleanup_path(aligned_directory)
-        return {
-            "success": False,
-            "message": "Unable to build a master embedding"
-        }, 400
+        cleanup_artifacts(
+            save_path,
+            frames_dir=frames.get("frames_directory"),
+            faces_dir=detected_faces.get("faces_directory"),
+            aligned_dir=aligned_directory
+        )
+        return fail_response(
+            "Unable to build a master embedding",
+            422,
+            "embedding_fusion"
+        )
 
     if upload_type == "registration":
         if not user_id:
-            cleanup_path(save_path)
-            cleanup_path(detected_faces.get("faces_directory"))
-            cleanup_path(aligned_directory)
-            return {
-                "success": False,
-                "message": "user_id is required for registration"
-            }, 400
+            cleanup_artifacts(
+                save_path,
+                frames_dir=frames.get("frames_directory"),
+                faces_dir=detected_faces.get("faces_directory"),
+                aligned_dir=aligned_directory
+            )
+            return fail_response(
+                "email is required for registration",
+                400,
+                "request"
+            )
 
         save_identity(
             user_id=user_id,
@@ -310,26 +401,44 @@ def save_uploaded_video(
         return {
             "success": True,
             "video_id": video_id,
+            "email": user_id,
             "user_id": user_id,
             "embedding_count": embedding_data["total_embeddings"],
+            "embedding_source": embedding_data.get("source", "unknown"),
             "status": "identity_registered"
         }, 200
 
     if upload_type == "verification":
-        stored_identity = load_identity(
-            request.form.get(
-                "user_id"
+        if not user_id:
+            cleanup_artifacts(
+                save_path,
+                frames_dir=frames.get("frames_directory"),
+                faces_dir=detected_faces.get("faces_directory"),
+                aligned_dir=aligned_directory
             )
+            return fail_response(
+                "email is required for verification",
+                400,
+                "request"
+            )
+
+        stored_identity = load_identity(
+            user_id
         )
 
         if stored_identity is None:
-            cleanup_path(save_path)
-            cleanup_path(detected_faces.get("faces_directory"))
-            cleanup_path(aligned_directory)
-            return {
-                "success": False,
-                "message": "User not found"
-            }, 404
+            cleanup_artifacts(
+                save_path,
+                frames_dir=frames.get("frames_directory"),
+                faces_dir=detected_faces.get("faces_directory"),
+                aligned_dir=aligned_directory
+            )
+            return fail_response(
+                "User not found",
+                404,
+                "identity_lookup",
+                email=user_id
+            )
 
         verification_embeddings = []
 
@@ -364,7 +473,9 @@ def save_uploaded_video(
             ),
             "authenticated": matched,
             "embedding_count": embedding_count,
-            "liveness": liveness_data
+            "liveness": liveness_data,
+            "email": stored_identity["user_id"],
+            "embedding_source": embedding_data.get("source", "unknown")
         }, 200
 
     cleanup_path(save_path)
@@ -398,11 +509,12 @@ def register_video():
 
     video_file = request.files["video"]
     payload = get_request_payload()
+    identity_key = get_identity_key(payload)
 
     response, status_code = save_uploaded_video(
         video_file=video_file,
         upload_type="registration",
-        user_id=payload.get("user_id")
+        user_id=identity_key
     )
 
     return jsonify(response), status_code
@@ -421,11 +533,13 @@ def verify_video():
         }), 400
 
     video_file = request.files["video"]
+    payload = get_request_payload()
+    identity_key = get_identity_key(payload)
 
     response, status_code = save_uploaded_video(
         video_file=video_file,
         upload_type="verification",
-        user_id=request.form.get("user_id")
+        user_id=identity_key
     )
 
     return jsonify(response), status_code

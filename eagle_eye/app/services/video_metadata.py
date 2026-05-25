@@ -3,8 +3,8 @@ from pathlib import Path
 import cv2
 
 MIN_FPS = 15
-MIN_WIDTH = 640
-MIN_HEIGHT = 480
+MIN_WIDTH = 320
+MIN_HEIGHT = 240
 MIN_DURATION = 2
 MAX_DURATION = 20
 

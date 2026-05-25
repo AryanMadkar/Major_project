@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import cv2
+import numpy as np
 
 from insightface.app import FaceAnalysis
 from app.services.face_aligner import (
@@ -25,6 +26,42 @@ def detect_faces(
     frames_directory,
     video_id
 ):
+
+    def get_face_embedding(face):
+        normed_embedding = getattr(
+            face,
+            "normed_embedding",
+            None
+        )
+
+        if normed_embedding is not None:
+            return np.asarray(
+                normed_embedding,
+                dtype=np.float32
+            ).reshape(-1)
+
+        embedding = getattr(
+            face,
+            "embedding",
+            None
+        )
+
+        if embedding is None:
+            return None
+
+        embedding = np.asarray(
+            embedding,
+            dtype=np.float32
+        ).reshape(-1)
+
+        norm = np.linalg.norm(
+            embedding
+        )
+
+        if norm == 0:
+            return None
+
+        return embedding / norm
 
     frames_directory = Path(
         frames_directory
@@ -146,6 +183,11 @@ def detect_faces(
             "confidence": float(
                 face.det_score
             ),
+            "embedding": get_face_embedding(
+                face
+            ).tolist()
+            if get_face_embedding(face) is not None
+            else None,
             "rotation_angle": round(
                 float(rotation_angle),
                 2
