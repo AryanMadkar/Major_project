@@ -12,27 +12,6 @@ def extract_type(state: GraphState):
     # KEYWORDS
     # =========================
 
-    sales_keywords = [
-        "sell",
-        "sale",
-        "selling",
-        "buy",
-        "purchase",
-        "available for sale",
-        "own house",
-        "investment"
-    ]
-
-    rent_keywords = [
-        "rent",
-        "rental",
-        "lease",
-        "tenant",
-        "available for rent",
-        "monthly rent",
-        "pg"
-    ]
-
     requirement_keywords = [
         "need",
         "looking for",
@@ -45,32 +24,53 @@ def extract_type(state: GraphState):
         "i need"
     ]
 
-    request_type = None
+    rent_keywords = [
+        "rent",
+        "rental",
+        "lease",
+        "tenant",
+        "available for rent",
+        "monthly rent",
+        "pg"
+    ]
+
+    sales_keywords = [
+        "sell",
+        "sale",
+        "selling",
+        "buy",
+        "purchase",
+        "available for sale",
+        "own house",
+        "investment"
+    ]
+
+    request_type = "unknown"
 
     # =========================
-    # CHECK SALES
+    # CHECK REQUIREMENT
     # =========================
-    for word in sales_keywords:
+    for word in requirement_keywords:
         if re.search(rf"\b{re.escape(word)}\b", text):
-            request_type = "sales"
+            request_type = "requirement"
             break
 
     # =========================
     # CHECK RENT
     # =========================
-    if request_type is None:
+    if request_type == "unknown":
         for word in rent_keywords:
             if re.search(rf"\b{re.escape(word)}\b", text):
                 request_type = "rent"
                 break
 
     # =========================
-    # CHECK REQUIREMENT
+    # CHECK SALES
     # =========================
-    if request_type is None:
-        for word in requirement_keywords:
+    if request_type == "unknown":
+        for word in sales_keywords:
             if re.search(rf"\b{re.escape(word)}\b", text):
-                request_type = "requirements"
+                request_type = "sale"
                 break
 
     return {
