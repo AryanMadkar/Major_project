@@ -22,6 +22,8 @@ class GraphState(TypedDict):
     deposit_price: Optional[int]
 
     price_type: Optional[str]
+
+    detected_price_type: Optional[str]
     # location----------------------------------
     
     locations: Optional[list[str]]

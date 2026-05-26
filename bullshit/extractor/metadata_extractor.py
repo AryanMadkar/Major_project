@@ -142,9 +142,11 @@ def extract_metadata(state: GraphState):
 
         prompt = STRUCTURED_INSTRUCTION + "\n\nMessage:\n" + text
 
-        raw = llm.run(prompt)
+        raw = llm.invoke(prompt)
 
-        parsed = safe_parse_json_object(raw)
+        raw_content = raw.content if hasattr(raw, "content") else str(raw)
+
+        parsed = safe_parse_json_object(raw_content)
 
         if parsed.get("title") is not None:
             message_title = str(parsed.get("title")).strip() or None
