@@ -44,6 +44,12 @@ def response_node(state: GraphState):
             "property_subtype": state.get("property_subtype"),
             "all_detected_subtypes": state.get("all_detected_subtypes"),
         },
+        "metadata": {
+            "message_title": state.get("message_title"),
+            "contact_people": state.get("contact_people"),
+            "contact_numbers": state.get("contact_numbers"),
+            "metadata_summary": state.get("metadata_summary"),
+        },
     }
 
     print("\n=== Extraction Summary ===")
@@ -80,5 +86,11 @@ def response_node(state: GraphState):
     prop = output.get("property", {})
     print(f"Property Subtype: {prop.get('property_subtype')}")
     print(f"All Detected Subtypes: {prop.get('all_detected_subtypes')}")
+
+    meta = output.get("metadata", {})
+    print(f"Message Title: {meta.get('message_title')}")
+    print(f"Contact People: {meta.get('contact_people')}")
+    print(f"Contact Numbers: {meta.get('contact_numbers')}")
+    print(f"Metadata Summary: {meta.get('metadata_summary')}")
 
     return {"response_output": output}

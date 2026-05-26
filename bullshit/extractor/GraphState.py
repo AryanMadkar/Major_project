@@ -36,6 +36,13 @@ class GraphState(TypedDict):
     property_subtype: Optional[str]
 
     all_detected_subtypes: Optional[list[str]]
+    message_title: Optional[str]
+
+    contact_people: Optional[list[str]]
+
+    contact_numbers: Optional[list[str]]
+
+    metadata_summary: Optional[dict[str, Any]]
 
     parking_type: Optional[str]
     response_output: Optional[dict[str, Any]]
