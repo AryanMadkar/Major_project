@@ -35,6 +35,15 @@ def response_node(state: GraphState):
             "furnishing": state.get("furnishing"),
             "facing": state.get("facing"),
         },
+        "parking": {
+            "parking_count": state.get("parking_count"),
+            "parking_type": state.get("parking_type"),
+        },
+        "amenities": state.get("amenities"),
+        "property": {
+            "property_subtype": state.get("property_subtype"),
+            "all_detected_subtypes": state.get("all_detected_subtypes"),
+        },
     }
 
     print("\n=== Extraction Summary ===")
@@ -61,5 +70,15 @@ def response_node(state: GraphState):
     # Always print attributes (may be None)
     print(f"Furnishing: {attributes.get('furnishing')}")
     print(f"Facing: {attributes.get('facing')}")
+
+    parking = output.get("parking", {})
+    print(f"Parking Count: {parking.get('parking_count')}")
+    print(f"Parking Type: {parking.get('parking_type')}")
+
+    print(f"Amenities: {output.get('amenities')}")
+
+    prop = output.get("property", {})
+    print(f"Property Subtype: {prop.get('property_subtype')}")
+    print(f"All Detected Subtypes: {prop.get('all_detected_subtypes')}")
 
     return {"response_output": output}

@@ -29,5 +29,14 @@ class GraphState(TypedDict):
     furnishing: Optional[str]
 
     facing: Optional[str]
+    
+    amenities: Optional[list[str]]
+
+    parking_count: Optional[int]
+    property_subtype: Optional[str]
+
+    all_detected_subtypes: Optional[list[str]]
+
+    parking_type: Optional[str]
     response_output: Optional[dict[str, Any]]
     
