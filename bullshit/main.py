@@ -13,11 +13,13 @@ from extractor.amenities_extractor import extract_amenities
 from extractor.parking_extractor import extract_parking
 from extractor.property_subtype_extractor import extract_property_subtype
 from extractor.metadata_extractor import extract_metadata
+from advance_extractor.verification_node import audit_verification_agent
 builder = StateGraph(GraphState)
 builder.add_node("clean_text", clean_text_node)
 builder.add_node("extract_request_type", extract_type)
 builder.add_node("extract_bhk", extract_bhk)
 builder.add_node("response", response_node)
+builder.add_node("verify_response", audit_verification_agent)
 builder.add_node("extract_price", extract_price)
 builder.add_node("extract_location", extract_location)
 builder.add_node("extract_furnishing", extract_furnishing)
@@ -39,7 +41,8 @@ builder.add_edge("clean_text", "extract_amenities")
 builder.add_edge("clean_text", "extract_property_subtype")
 builder.add_edge("extract_request_type", "extract_price")
 builder.add_edge(["extract_request_type", "extract_bhk", "extract_price", "extract_location", "extract_furnishing", "extract_facing", "extract_parking", "extract_amenities", "extract_property_subtype", "extract_metadata"], "response")
-builder.add_edge("response", END)
+builder.add_edge("response", "verify_response")
+builder.add_edge("verify_response", END)
 
 graph = builder.compile()
 
@@ -60,6 +63,11 @@ CALL
 CONTACT PERSON SURESH"""
     })
     structured_output = result.get("response_output")
+    validation_report = result.get("validation_report")
 
     print("\nFinal Structured Output:")
     print(json.dumps(structured_output, indent=2, ensure_ascii=False))
+
+    if validation_report is not None:
+        print("\nValidation Report:")
+        print(json.dumps(validation_report, indent=2, ensure_ascii=False))

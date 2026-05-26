@@ -156,17 +156,10 @@ def extract_price(state: GraphState):
     if not prices:
         detected_price_type = "unknown"
 
-    if request_type == "requirement":
-        price_type = "budget" if prices else "unknown"
-    else:
-        price_type = detected_price_type
-
     return {
         "price": price,
         "price_min": price_min,
         "price_max": price_max,
         "rent_price": rent_price,
         "deposit_price": deposit_price,
-        "price_type": price_type,
-        "detected_price_type": detected_price_type,
     }

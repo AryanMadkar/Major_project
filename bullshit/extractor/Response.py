@@ -27,8 +27,6 @@ def response_node(state: GraphState):
             "bhk": state.get("bhk"),
         },
         "pricing": {
-            "price_type": state.get("price_type"),
-            "detected_price_type": state.get("detected_price_type"),
             "price": _as_int(state.get("price")),
             "price_display": _format_inr(state.get("price")),
             "price_min": _as_int(state.get("price_min")),
@@ -64,6 +62,7 @@ def response_node(state: GraphState):
             "contact_numbers": state.get("contact_numbers"),
             "metadata_summary": state.get("metadata_summary"),
         },
+        "validation_report": state.get("validation_report"),
     }
 
     return {"response_output": output}

@@ -20,10 +20,6 @@ class GraphState(TypedDict):
     rent_price: Optional[int]
 
     deposit_price: Optional[int]
-
-    price_type: Optional[str]
-
-    detected_price_type: Optional[str]
     # location----------------------------------
     
     locations: Optional[list[str]]
@@ -37,6 +33,7 @@ class GraphState(TypedDict):
     facing: Optional[str]
     
     amenities: Optional[list[str]]
+    validation_report: Optional[dict[str, Any]]
 
     parking_count: Optional[int]
     property_subtype: Optional[str]
