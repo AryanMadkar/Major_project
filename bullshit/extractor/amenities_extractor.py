@@ -146,29 +146,29 @@ def extract_amenities(state: GraphState):
     # LLM EXTRACTION
     # ======================================
 
+    # LLM extraction: call model and parse JSON separately so failures are visible
     try:
-
         chain = prompt | llm
-
-        response = chain.invoke({
-            "message": text
-        })
-
-        content = response.content.strip()
-
-        # Remove markdown if present
-        content = content.replace("```json", "")
-        content = content.replace("```", "")
-
-        parsed = json.loads(content)
-
-        if isinstance(parsed, list):
-
-            amenities.extend(parsed)
-
+        response = chain.invoke({"message": text})
     except Exception as e:
+        print("Amenities LLM invocation error:", e)
+        response = None
 
-        print("Amenities extraction error:", e)
+    if response is not None:
+        try:
+            content = response.content.strip()
+
+            # Remove markdown if present
+            content = content.replace("```json", "")
+            content = content.replace("```", "")
+
+            parsed = json.loads(content)
+
+            if isinstance(parsed, list):
+                amenities.extend(parsed)
+
+        except (json.JSONDecodeError, TypeError, AttributeError) as e:
+            print("Amenities parsing error:", e)
 
     # ======================================
     # CLEAN + DEDUP

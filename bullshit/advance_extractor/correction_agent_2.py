@@ -108,7 +108,7 @@ def safe_parse_json(content):
 
             return parsed
 
-    except Exception:
+    except (json.JSONDecodeError, TypeError, AttributeError):
         pass
 
     return None

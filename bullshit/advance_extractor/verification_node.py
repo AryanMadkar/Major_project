@@ -6,7 +6,11 @@ from extractor.GraphState import GraphState
 def _count_missing_fields(response_output: dict[str, Any], required_fields: list[str]):
     missing_fields = []
     for field_name in required_fields:
-        if response_output.get(field_name) in (None, [], {}, ""):
+        if field_name not in response_output:
+            missing_fields.append(field_name)
+            continue
+
+        if response_output.get(field_name) in (None, {}, ""):
             missing_fields.append(field_name)
     return missing_fields
 
@@ -46,9 +50,6 @@ def audit_verification_agent(state: GraphState):
         },
         "reasoning_summary": "Deterministic structural validation of the final response payload",
     }
-
-    response_output = dict(response_output)
-    response_output["validation_report"] = audit_report
 
     return {
         "validation_report": audit_report,

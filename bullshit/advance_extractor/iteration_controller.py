@@ -20,10 +20,10 @@ def iteration_controller(state: GraphState):
         0
     )
 
-    verification_history = state.get(
+    verification_history = list(state.get(
         "verification_history",
         []
-    )
+    ))
 
     is_valid = validation_report.get(
         "is_valid",

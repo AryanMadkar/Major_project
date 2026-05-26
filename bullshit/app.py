@@ -4,6 +4,8 @@ from main import graph
 
 
 app = Flask(__name__)
+# Preserve non-ASCII characters (e.g. currency symbols) in JSON responses
+app.config["JSON_AS_ASCII"] = False
 
 
 def _messages_to_text(messages):
@@ -56,13 +58,34 @@ def extract():
         }
     )
 
-    return jsonify(
-        {
-            "response_output": result.get("response_output"),
-            "validation_report": result.get("validation_report"),
-            "raw_result": result,
+    response_output = result.get("response_output") or {}
+    if isinstance(response_output, dict):
+        response_output = {
+            key: value
+            for key, value in response_output.items()
+            if key != "validation_report"
         }
-    )
+
+    # If some extractor produced double-escaped Unicode (literal "\\uXXXX"),
+    # decode those safely for obvious fields like price display.
+    def _decode_escaped_unicode(val):
+        import json as _json
+
+        if not isinstance(val, str):
+            return val
+        if "\\u" in val:
+            try:
+                return _json.loads(f'"{val}"')
+            except Exception:
+                return val
+        return val
+
+    for k, v in list(response_output.items()):
+        # handle common display fields which may contain escaped currency
+        if k.endswith("_display") and isinstance(v, str):
+            response_output[k] = _decode_escaped_unicode(v)
+
+    return jsonify(response_output)
 
 
 if __name__ == "__main__":

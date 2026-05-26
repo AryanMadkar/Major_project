@@ -62,7 +62,6 @@ def response_node(state: GraphState):
             "contact_numbers": state.get("contact_numbers"),
             "metadata_summary": state.get("metadata_summary"),
         },
-        "validation_report": state.get("validation_report"),
     }
 
     return {"response_output": output}
