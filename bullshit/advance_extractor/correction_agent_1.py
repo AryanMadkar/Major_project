@@ -103,13 +103,13 @@ Return ONLY VALID JSON.
 
 OUTPUT FORMAT:
 
-{
-    "summary": {},
-    "pricing": {},
-    "location": {},
-    "parking": {},
-    "property": {}
-}
+{{
+    "summary": {{}},
+    "pricing": {{}},
+    "location": {{}},
+    "parking": {{}},
+    "property": {{}}
+}}
 
 ORIGINAL MESSAGE:
 {original_message}

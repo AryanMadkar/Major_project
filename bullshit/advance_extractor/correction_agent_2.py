@@ -73,11 +73,11 @@ Return ONLY VALID JSON.
 
 OUTPUT FORMAT:
 
-{
-    "attributes": {},
+{{
+    "attributes": {{}},
     "amenities": [],
-    "metadata": {}
-}
+    "metadata": {{}}
+}}
 
 ORIGINAL MESSAGE:
 {original_message}
