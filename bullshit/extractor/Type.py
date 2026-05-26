@@ -6,7 +6,7 @@ from .GraphState import GraphState
 # =========================
 def extract_type(state: GraphState):
 
-    text = state["cleaned_text"]
+    text = (state.get("cleaned_text") or "").lower()
 
     # =========================
     # KEYWORDS
@@ -15,7 +15,6 @@ def extract_type(state: GraphState):
     requirement_keywords = [
         "required",
         "requirement",
-        "need",
         "looking for",
         "require",
         "searching",
@@ -25,9 +24,7 @@ def extract_type(state: GraphState):
         "required for",
         "find me",
         "i am searching",
-        "i need",
-        "out rate",
-        "outright"
+        "i need"
     ]
 
     rent_keywords = [
@@ -48,7 +45,15 @@ def extract_type(state: GraphState):
         "purchase",
         "available for sale",
         "own house",
-        "investment"
+        "investment",
+        "asking",
+        "quote",
+        "quoted",
+        "out rate",
+        "outright",
+        "immediate possession",
+        "oc",
+        "possession"
     ]
 
     request_type = "unknown"
@@ -62,7 +67,15 @@ def extract_type(state: GraphState):
             break
 
     if request_type == "unknown":
-        if re.search(r"\b(required|need|wanted|looking for|requirement)\b", text):
+        if re.search(r"\b(required|wanted|looking for|requirement)\b", text):
+            request_type = "requirement"
+
+    # "need" alone overfires in many sale/rent messages.
+    if request_type == "unknown":
+        if re.search(r"\bneed\b", text) and re.search(
+            r"\b(flat|apartment|house|property|bhk|rk|room)\b",
+            text,
+        ):
             request_type = "requirement"
 
     # =========================
@@ -82,6 +95,17 @@ def extract_type(state: GraphState):
             if re.search(rf"\b{re.escape(word)}\b", text):
                 request_type = "sale"
                 break
+
+    detected_price_type = "unknown"
+    if re.search(r"\b(cr|crore|crores|lakh|lac|asking|quote|quoted|out rate|outright)\b", text):
+        detected_price_type = "sale"
+
+    state_price = state.get("price")
+    if detected_price_type == "unknown" and isinstance(state_price, (int, float)) and int(state_price) >= 5_00_000:
+        detected_price_type = "sale"
+
+    if detected_price_type == "sale" and request_type == "unknown":
+        request_type = "sale"
 
     return {
         "request_type": request_type

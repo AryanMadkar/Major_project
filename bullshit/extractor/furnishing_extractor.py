@@ -16,8 +16,7 @@ FULLY_FURNISHED = [
     "furnished flat",
     "furnished apartment",
     "fully setup",
-    "ready to move furnished",
-    "all amenities"
+    "ready to move furnished"
 ]
 
 SEMI_FURNISHED = [
@@ -51,62 +50,32 @@ UNFURNISHED = [
 
 def extract_furnishing(state: GraphState):
 
-    text = state["cleaned_text"]
+    text = (state.get("cleaned_text") or "").lower()
 
-    furnishing = None
-
-    # ======================================
-    # FULLY FURNISHED
-    # ======================================
+    scores = {
+        "fully_furnished": 0,
+        "semi_furnished": 0,
+        "unfurnished": 0
+    }
 
     for word in FULLY_FURNISHED:
-
         if re.search(rf"\b{re.escape(word)}\b", text):
+            scores["fully_furnished"] += 5
 
-            furnishing = "fully_furnished"
+    for word in SEMI_FURNISHED:
+        if re.search(rf"\b{re.escape(word)}\b", text):
+            scores["semi_furnished"] += 3
 
-            break
+    for word in UNFURNISHED:
+        if re.search(rf"\b{re.escape(word)}\b", text):
+            scores["unfurnished"] += 4
 
-    # ======================================
-    # SEMI FURNISHED
-    # ======================================
+    if re.search(r"\bac\b|\bsofa\b|\bbed\b|\bfridge\b|\bwashing machine\b", text):
+        scores["semi_furnished"] += 2
 
-    if furnishing is None:
-
-        for word in SEMI_FURNISHED:
-
-            if re.search(rf"\b{re.escape(word)}\b", text):
-
-                furnishing = "semi_furnished"
-
-                break
-
-    # ======================================
-    # UNFURNISHED
-    # ======================================
-
-    if furnishing is None:
-
-        for word in UNFURNISHED:
-
-            if re.search(rf"\b{re.escape(word)}\b", text):
-
-                furnishing = "unfurnished"
-
-                break
-
-    # ======================================
-    # SMART FALLBACK
-    # ======================================
-
-    if furnishing is None:
-
-        if re.search(
-            r"\bac\b|\bsofa\b|\bbed\b|\bfridge\b|\bwashing machine\b",
-            text
-        ):
-
-            furnishing = "semi_furnished"
+    furnishing = max(scores, key=scores.get)
+    if scores[furnishing] <= 0:
+        furnishing = None
 
     return {
         "furnishing": furnishing

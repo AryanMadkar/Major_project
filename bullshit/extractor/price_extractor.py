@@ -2,6 +2,31 @@ import re
 from .GraphState import GraphState
 
 
+VALID_PRICE_CONTEXT = r"""
+\b(
+rent|
+deposit|
+budget|
+asking|
+quote|
+quoted|
+price|
+cost|
+sale|
+cr|
+crore|
+lakh|
+lac|
+k|
+rs|
+monthly|
+lease|
+outright|
+out\s*rate
+)\b
+"""
+
+
 def convert_price_to_number(value, unit):
 
     value = float(value)
@@ -25,12 +50,25 @@ def _has_price_context(text, start, end):
 
     context = text[max(0, start - 35): end + 35].lower()
 
-    return bool(
-        re.search(
-            r"\b(budget|price|asking|expected|range|between|from|to|upto|up to|rent|deposit|monthly|lease|per month|rate|sq\s*ft|sqft|psf|per sq\s*ft|per sqft|lac|lakh|lacs|lakhs|cr|crore|crores|k)\b",
-            context,
-        )
-    )
+    return bool(re.search(VALID_PRICE_CONTEXT, context, re.IGNORECASE | re.VERBOSE))
+
+
+def _price_context_score(context):
+    score = 0
+
+    if re.search(VALID_PRICE_CONTEXT, context, re.IGNORECASE | re.VERBOSE):
+        score += 6
+
+    if re.search(r"\b(deposit|advance|token|maintenance)\b", context):
+        score += 5
+
+    if re.search(r"\b(rent|monthly|lease|per month)\b", context):
+        score += 5
+
+    if re.search(r"\b(range|between|from|to|upto|up to)\b", context):
+        score += 2
+
+    return score
 
 
 def extract_price(state: GraphState):
@@ -76,19 +114,37 @@ def extract_price(state: GraphState):
 
         number = match.group(1)
         unit = match.group(2)
+        context = text[max(0, match.start() - 35): match.end() + 35].lower()
 
         if overlaps_phone(match.start(), match.end()):
+            continue
+
+        # Block common non-price numerics (e.g. 2 bhk, 300 carpet, 1200 sqft).
+        if re.search(r"\bbhk\b", context):
+            continue
+
+        if re.search(r"\b(carpet|sqft|sq\s*ft|builtup|area|plot area)\b", context):
             continue
 
         if unit is None and not _has_price_context(text, match.start(), match.end()):
             continue
 
         try:
+            value = convert_price_to_number(number, unit)
+
+            # Request-type-aware filtering for unrealistic/contradictory values.
+            if request_type == "sale" and value < 5_00_000:
+                continue
+
+            if request_type == "rent" and unit and unit.lower() in ["cr", "crore", "crores"]:
+                continue
+
             prices.append({
-                "value": convert_price_to_number(number, unit),
+                "value": value,
                 "unit": unit.lower() if unit else None,
                 "start": match.start(),
                 "end": match.end(),
+                "context_score": _price_context_score(context),
             })
         except (TypeError, ValueError):
             continue
@@ -135,8 +191,11 @@ def extract_price(state: GraphState):
 
     if detected_price_type == "unknown" and prices:
 
-        biggest_price = max(item["value"] for item in prices)
-        price = biggest_price
+        best_item = max(
+            prices,
+            key=lambda item: (item.get("context_score", 0), item["value"])
+        )
+        price = best_item["value"]
 
         crore_detected = any(
             item["unit"] in ["cr", "crore", "crores"]
@@ -145,7 +204,7 @@ def extract_price(state: GraphState):
 
         if crore_detected:
             detected_price_type = "sale"
-        elif biggest_price >= 5_00_000:
+        elif price >= 5_00_000:
             detected_price_type = "sale"
         else:
             detected_price_type = "rent"
@@ -156,10 +215,15 @@ def extract_price(state: GraphState):
     if not prices:
         detected_price_type = "unknown"
 
+    inferred_request_type = request_type
+    if request_type == "unknown" and detected_price_type in {"sale", "rent"}:
+        inferred_request_type = detected_price_type
+
     return {
         "price": price,
         "price_min": price_min,
         "price_max": price_max,
         "rent_price": rent_price,
         "deposit_price": deposit_price,
+        "request_type": inferred_request_type,
     }

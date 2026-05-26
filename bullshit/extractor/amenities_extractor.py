@@ -59,6 +59,22 @@ STANDARD_AMENITIES = [
 ]
 
 
+BLOCKED_GENERIC_AMENITIES = {
+    "luxury amenities",
+    "all amenities",
+    "modern amenities",
+}
+
+
+AMENITY_NORMALIZATION = {
+    "swimming": "swimming pool",
+    "swiming": "swimming pool",
+    "swiming pool": "swimming pool",
+    "swimming pool": "swimming pool",
+    "gymnasium": "gym",
+}
+
+
 # ==========================================
 # PROMPT
 # ==========================================
@@ -123,7 +139,11 @@ def extract_amenities(state: GraphState):
     regex_map = {
 
         r"\bgym\b": "gym",
+        r"\bgymnasium\b": "gym",
         r"\bpool\b": "swimming pool",
+        r"\bswimming\b": "swimming pool",
+        r"\bswiming\b": "swimming pool",
+        r"\bswiming\s+pool\b": "swimming pool",
         r"\bclub\b|\bclubhouse\b": "clubhouse",
         r"\blift\b": "lift",
         r"\bparking\b": "parking",
@@ -132,7 +152,7 @@ def extract_amenities(state: GraphState):
         r"\bgarden\b": "garden",
         r"\bplay area\b": "kids play area",
         r"\bpower backup\b": "power backup",
-        r"\bmodular kitchen\b": "modular kitchen",
+        r"\bmodular kitchen\b|\bmodule kitchen\b|\bmoduler kitchen\b": "modular kitchen",
         r"\bac\b|\bair conditioning\b": "air conditioning"
     }
 
@@ -182,6 +202,11 @@ def extract_amenities(state: GraphState):
             continue
 
         item = item.strip().lower()
+
+        item = AMENITY_NORMALIZATION.get(item, item)
+
+        if item in BLOCKED_GENERIC_AMENITIES:
+            continue
 
         if item not in cleaned:
 

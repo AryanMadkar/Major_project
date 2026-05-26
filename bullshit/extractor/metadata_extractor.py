@@ -35,8 +35,8 @@ STRUCTURED_INSTRUCTION = '''
 You are an expert Indian real-estate extraction assistant. Given the message below, extract the fields and return ONLY a single valid JSON object (no surrounding text, no markdown):
 
 Fields to return:
-- "title": SHORT professional title (max 12 words) or null. Prefer concise factual wording: BHK, property type, and a main location/token if available (e.g. "2BHK Flat for Rent in Andheri West"). Do NOT hallucinate missing facts.
-- "contacts": array of contact person names. Normalize to lowercase, remove honorifics (e.g. "Mr.", "Ms.") and extra tokens. Return [] if none.
+- "title": SHORT professional title (max 12 words) or null. Prefer concise factual wording: BHK, property type, and a main location/token if available (e.g. "2BHK Flat For Rent in Andheri West"). Use "For Sale" for sale messages and "For Rent" for rent messages when request type is known. Do NOT hallucinate missing facts.
+- "contacts": array of FULL PERSON NAMES. Normalize to lowercase, remove honorifics (e.g. "Mr.", "Ms.") and extra tokens, but do not split one person into first/last tokens. Return [] if none.
 - "numbers": array of Indian phone numbers as 10-digit strings (no +91, no spaces/dashes). Remove duplicates. Return [] if none.
 
 Robustness rules (important):
@@ -53,6 +53,53 @@ Normalization examples:
 Exact output example:
 {"title": "2BHK Flat for Rent in Andheri West", "contacts": ["rahul"], "numbers": ["9876543210"]}
 '''
+
+
+def _normalize_request_label(request_type):
+    if request_type == "sale":
+        return "For Sale"
+    if request_type == "rent":
+        return "For Rent"
+    return None
+
+
+def _fallback_title(state: GraphState):
+    bhk = state.get("bhk")
+    subtype = state.get("property_subtype") or "flat"
+    location = state.get("primary_location")
+    request_label = _normalize_request_label(state.get("request_type"))
+
+    if bhk is None and not location and request_label is None:
+        return None
+
+    parts = []
+    if isinstance(bhk, int) and bhk > 0:
+        parts.append(f"{bhk}BHK")
+
+    parts.append(str(subtype).replace("_", " ").title())
+
+    if request_label:
+        parts.append(request_label)
+
+    if location:
+        parts.append(f"in {str(location).title()}")
+
+    return " ".join(parts).strip() or None
+
+
+def _enforce_request_type_in_title(title, request_type):
+    if not title:
+        return title
+
+    request_label = _normalize_request_label(request_type)
+    if request_label is None:
+        return title
+
+    if re.search(r"\bfor\s+rent\b|\bfor\s+sale\b", title, re.IGNORECASE):
+        title = re.sub(r"\bfor\s+rent\b|\bfor\s+sale\b", request_label, title, flags=re.IGNORECASE)
+        return title
+
+    return f"{title} {request_label}".strip()
 
 def safe_parse_json_object(content: str) -> dict:
     try:
@@ -127,6 +174,7 @@ def safe_json_array(content):
 def extract_metadata(state: GraphState):
 
     text = state["cleaned_text"]
+    request_type = state.get("request_type")
 
     message_title = None
 
@@ -139,7 +187,13 @@ def extract_metadata(state: GraphState):
     # ======================================
 
     try:
-        prompt = STRUCTURED_INSTRUCTION + "\n\nMessage:\n" + text
+        prompt = (
+            STRUCTURED_INSTRUCTION
+            + "\n\nRequest Type: "
+            + str(request_type or "unknown")
+            + "\n\nMessage:\n"
+            + text
+        )
         raw = llm.invoke(prompt)
     except Exception as e:
         print("Metadata LLM invocation error:", e)
@@ -159,6 +213,11 @@ def extract_metadata(state: GraphState):
 
         except (json.JSONDecodeError, TypeError, AttributeError) as e:
             print("Metadata parsing error:", e)
+
+    message_title = _enforce_request_type_in_title(message_title, request_type)
+
+    if message_title is None:
+        message_title = _fallback_title(state)
 
     # ======================================
     # REGEX FALLBACK FOR NUMBERS
