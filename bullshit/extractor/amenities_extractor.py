@@ -69,17 +69,14 @@ prompt = ChatPromptTemplate.from_messages([
         """
 You are an expert Indian real-estate extraction AI.
 
-Your task:
+Your task: Extract property amenities from the message and return ONLY a JSON array of normalized amenity names.
 
-Extract ALL property amenities from the message.
-
-Rules:
-- Return ONLY valid JSON
-- Output must be an array
-- Detect implicit amenities
-- Understand WhatsApp abbreviations
-- Normalize names
-- Ignore non-amenity words
+Guidelines:
+- Output must be valid JSON array and nothing else (no markdown, no explanation).
+- Prefer the provided whitelist of standard amenities. Only include non-whitelist items if they are explicit and clearly an amenity (avoid open-ended terms like "modern amenities").
+- Normalize common synonyms (e.g. "pool" → "swimming pool", "ac" → "air conditioning", "modular kitchen" → "modular kitchen").
+- Detect short-form/WhatsApp abbreviations ("ac", "lift", "cctv").
+- Do not hallucinate amenities that are not present or only implied vaguely.
 
 Examples:
 

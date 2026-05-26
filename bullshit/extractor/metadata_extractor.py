@@ -4,46 +4,8 @@ import re
 from dotenv import load_dotenv
 
 from langchain_groq import ChatGroq
-from langchain_core.prompts import ChatPromptTemplate
 
-# RunnableParallel may not exist in all langchain installs — provide a safe fallback.
-try:
-    from langchain.schema.runnable import RunnableParallel
-except Exception:
-    class _SimpleOut:
-        def __init__(self, content):
-            self.content = content
-
-    class RunnableParallel:
-        def __init__(self, **runnables):
-            self._runnables = runnables
-
-        def invoke(self, inputs: dict):
-            results = {}
-
-            for name, runnable in self._runnables.items():
-                try:
-                    # Try the newer Runnable API
-                    res = runnable.invoke(inputs)
-                except Exception:
-                    try:
-                        # Try common .run(text) interface
-                        msg = inputs.get("message")
-                        res = runnable.run(msg)
-                    except Exception:
-                        try:
-                            # Try callable
-                            res = runnable(inputs)
-                        except Exception:
-                            res = None
-
-                # Normalize to object with .content attribute
-                if hasattr(res, "content"):
-                    results[name] = res
-                else:
-                    results[name] = _SimpleOut(res)
-
-            return results
+load_dotenv()
 
 from .GraphState import GraphState
 
@@ -61,126 +23,48 @@ llm = ChatGroq(
 
 
 # ==========================================
-# TITLE CHAIN
+# SINGLE STRUCTURED LLM CALL
 # ==========================================
 
-title_prompt = ChatPromptTemplate.from_messages([
-    (
-        "system",
-        """
-You are an expert Indian real-estate AI.
+# We'll ask the LLM to output a single JSON object with three keys:
+# - title: short professional title or null
+# - contacts: array of contact person names
+# - numbers: array of phone numbers (10-digit strings)
 
-Generate a SHORT professional title.
+STRUCTURED_INSTRUCTION = '''
+You are an expert Indian real-estate extraction assistant. Given the message below, extract the fields and return ONLY a single valid JSON object (no surrounding text, no markdown):
 
-Rules:
-- Max 12 words
-- Clean title
-- Mention:
-  - bhk if available
-  - property type
-  - location
-  - rent/sale if possible
-- No emojis
-- No extra text
+Fields to return:
+- "title": SHORT professional title (max 12 words) or null. Prefer concise factual wording: BHK, property type, and a main location/token if available (e.g. "2BHK Flat for Rent in Andheri West"). Do NOT hallucinate missing facts.
+- "contacts": array of contact person names. Normalize to lowercase, remove honorifics (e.g. "Mr.", "Ms.") and extra tokens. Return [] if none.
+- "numbers": array of Indian phone numbers as 10-digit strings (no +91, no spaces/dashes). Remove duplicates. Return [] if none.
 
-Examples:
-"2BHK Flat for Rent in Andheri West"
-"Office Space Available in BKC"
-"Luxury Penthouse for Sale"
-"""
-    ),
-    (
-        "human",
-        """
-Message:
+Robustness rules (important):
+- Return strictly valid JSON only. If unsure, prefer empty arrays or null rather than guessing.
+- Do not invent names, titles, locations, or numbers that are not present in the input.
+- For partial phone numbers or ambiguous tokens, exclude them unless they clearly match an Indian 10-digit pattern.
+- Keep arrays short and precise; only include items clearly present in the text.
 
-{message}
-"""
-    )
-])
+Normalization examples:
+- "Call Rahul at +91-98765 43210" → {"numbers": ["9876543210"], "contacts": ["rahul"]}
+- "Looking for 1 BHK near Kanakya park, contact: Amit" → {"title": "1BHK Flat for Rent near Kanakya park", "contacts": ["amit"]}
+- "No contact provided" → {"title": null, "contacts": [], "numbers": []}
 
-title_chain = title_prompt | llm
+Exact output example:
+{"title": "2BHK Flat for Rent in Andheri West", "contacts": ["rahul"], "numbers": ["9876543210"]}
+'''
 
-
-# ==========================================
-# CONTACT PERSON CHAIN
-# ==========================================
-
-contact_prompt = ChatPromptTemplate.from_messages([
-    (
-        "system",
-        """
-Extract ALL contact person names.
-
-Rules:
-- Return ONLY JSON array
-- No explanations
-- Ignore locations
-- Ignore property names
-- Ignore broker/company names unless clearly person name
-
-Example:
-["rahul", "amit shah"]
-"""
-    ),
-    (
-        "human",
-        """
-Message:
-
-{message}
-"""
-    )
-])
-
-contact_chain = contact_prompt | llm
-
-
-# ==========================================
-# PHONE NUMBER CHAIN
-# ==========================================
-
-number_prompt = ChatPromptTemplate.from_messages([
-    (
-        "system",
-        """
-Extract ALL phone numbers.
-
-Rules:
-- Return ONLY JSON array
-- Keep only valid Indian phone numbers
-- Remove spaces/dashes
-- Keep duplicates removed
-
-Example:
-["9876543210", "9988776655"]
-"""
-    ),
-    (
-        "human",
-        """
-Message:
-
-{message}
-"""
-    )
-])
-
-number_chain = number_prompt | llm
-
-
-# ==========================================
-# PARALLEL CHAIN
-# ==========================================
-
-parallel_chain = RunnableParallel(
-
-    title=title_chain,
-
-    contacts=contact_chain,
-
-    numbers=number_chain
-)
+def safe_parse_json_object(content: str) -> dict:
+    try:
+        content = content.strip()
+        content = content.replace("```json", "")
+        content = content.replace("```", "")
+        parsed = json.loads(content)
+        if isinstance(parsed, dict):
+            return parsed
+    except Exception:
+        pass
+    return {}
 
 
 # ==========================================
@@ -251,45 +135,23 @@ def extract_metadata(state: GraphState):
     contact_numbers = []
 
     # ======================================
-    # RUN PARALLEL CHAINS
+    # SINGLE STRUCTURED LLM CALL
     # ======================================
 
     try:
 
-        result = parallel_chain.invoke({
+        prompt = STRUCTURED_INSTRUCTION + "\n\nMessage:\n" + text
 
-            "message": text
-        })
+        raw = llm.run(prompt)
 
-        # ==================================
-        # TITLE
-        # ==================================
+        parsed = safe_parse_json_object(raw)
 
-        if result.get("title"):
+        if parsed.get("title") is not None:
+            message_title = str(parsed.get("title")).strip() or None
 
-            message_title = result["title"].content.strip()
+        contact_people = parsed.get("contacts") or []
 
-        # ==================================
-        # CONTACTS
-        # ==================================
-
-        if result.get("contacts"):
-
-            contact_people = safe_json_array(
-
-                result["contacts"].content
-            )
-
-        # ==================================
-        # NUMBERS
-        # ==================================
-
-        if result.get("numbers"):
-
-            contact_numbers = safe_json_array(
-
-                result["numbers"].content
-            )
+        contact_numbers = parsed.get("numbers") or []
 
     except Exception as e:
 

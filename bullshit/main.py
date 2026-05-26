@@ -50,10 +50,14 @@ if __name__ == "__main__":
         f.write(png_data)
 
     result = graph.invoke({
-        "user_input": """1 BHK
-            Kanakya park
-            With car parking
-            Asking 1.05 lakhs and deposit 2 lakhs"""
+        "user_input": """🏠REQUIRED 1 BHK FLAT FOR OUT RATE BUDGET 1 CR TO 1.10 CR
+LOCATION ANY CHARKOP SECTOR
+KANDIVALI WEST
+Big swiming pool 
+inbuild gym 
+CALL
+9820067788
+CONTACT PERSON SURESH"""
     })
     structured_output = result.get("response_output")
 

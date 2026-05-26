@@ -3,61 +3,69 @@ from .GraphState import GraphState
 
 
 # ==========================================
-# DIRECTION MAPPING
+# DIRECTION PATTERNS
 # ==========================================
 
-DIRECTION_PATTERNS = {
+FACING_PATTERNS = {
 
     "north": [
-        "north facing",
-        "north side",
-        "north"
+        r"\bnorth\s*facing\b",
+        r"\bfacing\s*north\b",
+        r"\bnorth-facing\b"
     ],
 
     "south": [
-        "south facing",
-        "south side",
-        "south"
+        r"\bsouth\s*facing\b",
+        r"\bfacing\s*south\b",
+        r"\bsouth-facing\b"
     ],
 
     "east": [
-        "east facing",
-        "east side",
-        "east"
+        r"\beast\s*facing\b",
+        r"\bfacing\s*east\b",
+        r"\beast-facing\b"
     ],
 
     "west": [
-        "west facing",
-        "west side",
-        "west"
+        r"\bwest\s*facing\b",
+        r"\bfacing\s*west\b",
+        r"\bwest-facing\b"
     ],
 
     "north_east": [
-        "north east",
-        "north-east",
-        "ne facing",
-        "ne"
+        r"\bnorth\s*east\s*facing\b",
+        r"\bfacing\s*north\s*east\b",
+        r"\bnorth-east\s*facing\b",
+        r"\bfacing\s*north-east\b",
+        r"\bne\s*facing\b",
+        r"\bfacing\s*ne\b"
     ],
 
     "north_west": [
-        "north west",
-        "north-west",
-        "nw facing",
-        "nw"
+        r"\bnorth\s*west\s*facing\b",
+        r"\bfacing\s*north\s*west\b",
+        r"\bnorth-west\s*facing\b",
+        r"\bfacing\s*north-west\b",
+        r"\bnw\s*facing\b",
+        r"\bfacing\s*nw\b"
     ],
 
     "south_east": [
-        "south east",
-        "south-east",
-        "se facing",
-        "se"
+        r"\bsouth\s*east\s*facing\b",
+        r"\bfacing\s*south\s*east\b",
+        r"\bsouth-east\s*facing\b",
+        r"\bfacing\s*south-east\b",
+        r"\bse\s*facing\b",
+        r"\bfacing\s*se\b"
     ],
 
     "south_west": [
-        "south west",
-        "south-west",
-        "sw facing",
-        "sw"
+        r"\bsouth\s*west\s*facing\b",
+        r"\bfacing\s*south\s*west\b",
+        r"\bsouth-west\s*facing\b",
+        r"\bfacing\s*south-west\b",
+        r"\bsw\s*facing\b",
+        r"\bfacing\s*sw\b"
     ]
 }
 
@@ -73,14 +81,14 @@ def extract_facing(state: GraphState):
     facing = None
 
     # ======================================
-    # DETECT DIRECTIONS
+    # DETECT DIRECTIONS ONLY WITH EXPLICIT FACING CONTEXT
     # ======================================
 
-    for direction, keywords in DIRECTION_PATTERNS.items():
+    for direction, patterns in FACING_PATTERNS.items():
 
-        for word in keywords:
+        for pattern in patterns:
 
-            if re.search(rf"\b{re.escape(word)}\b", text):
+            if re.search(pattern, text):
 
                 facing = direction
 
@@ -88,31 +96,6 @@ def extract_facing(state: GraphState):
 
         if facing:
             break
-
-    # ======================================
-    # EXTRA SMART DETECTION
-    # ======================================
-
-    if facing is None:
-
-        facing_patterns = [
-
-            r"([a-z\s]+)\s*facing",
-            r"facing\s*[:\-]?\s*([a-z\s]+)"
-        ]
-
-        for pattern in facing_patterns:
-
-            match = re.search(pattern, text)
-
-            if match:
-
-                detected = match.group(1).strip()
-
-                if len(detected) < 20:
-                    facing = detected.replace(" ", "_")
-
-                    break
 
     return {
         "facing": facing

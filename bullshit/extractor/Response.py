@@ -7,6 +7,15 @@ def _format_inr(value):
     return f"₹{int(value):,}"
 
 
+def _as_int(value):
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 # =========================
 # RESPONSE NODE
 # =========================
@@ -19,11 +28,15 @@ def response_node(state: GraphState):
         },
         "pricing": {
             "price_type": state.get("price_type"),
-            "price": state.get("price"),
+            "price": _as_int(state.get("price")),
             "price_display": _format_inr(state.get("price")),
-            "rent_price": state.get("rent_price"),
+            "price_min": _as_int(state.get("price_min")),
+            "price_max": _as_int(state.get("price_max")),
+            "price_min_display": _format_inr(state.get("price_min")),
+            "price_max_display": _format_inr(state.get("price_max")),
+            "rent_price": _as_int(state.get("rent_price")),
             "rent_price_display": _format_inr(state.get("rent_price")),
-            "deposit_price": state.get("deposit_price"),
+            "deposit_price": _as_int(state.get("deposit_price")),
             "deposit_price_display": _format_inr(state.get("deposit_price")),
         },
         "location": {
@@ -59,6 +72,8 @@ def response_node(state: GraphState):
     pricing = output.get("pricing", {})
     if pricing.get("price_display"):
         print(f"Price: {pricing['price_display']}")
+    if pricing.get("price_min_display") and pricing.get("price_max_display"):
+        print(f"Price Range: {pricing['price_min_display']} to {pricing['price_max_display']}")
     if pricing.get("rent_price_display"):
         print(f"Rent: {pricing['rent_price_display']}")
     if pricing.get("deposit_price_display"):

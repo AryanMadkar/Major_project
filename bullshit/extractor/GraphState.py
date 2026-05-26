@@ -13,6 +13,10 @@ class GraphState(TypedDict):
 
     price: Optional[int]
 
+    price_min: Optional[int]
+
+    price_max: Optional[int]
+
     rent_price: Optional[int]
 
     deposit_price: Optional[int]

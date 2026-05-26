@@ -27,6 +27,25 @@ def convert_price_to_number(value, unit):
     return int(value)
 
 
+def _has_price_context(text, start, end):
+
+    context = text[max(0, start - 35): end + 35].lower()
+
+    return bool(
+        re.search(
+            r"\b(budget|price|asking|expected|range|between|from|to|upto|up to|rent|deposit|monthly|lease|per month|lac|lakh|lacs|lakhs|cr|crore|crores|k)\b",
+            context,
+        )
+    )
+
+
+def _looks_like_phone_number(text, start, end):
+
+    snippet = text[start:end]
+
+    return bool(re.fullmatch(r"(?:\+91[\s-]?)?[6-9]\d{9}", snippet))
+
+
 # ==========================================
 # MAIN EXTRACTOR
 # ==========================================
@@ -69,6 +88,16 @@ def extract_price(state: GraphState):
     )
 
     prices = []
+    phone_spans = []
+
+    for phone_match in re.finditer(r"(?<!\d)(?:\+91[\s-]?)?[6-9]\d{9}(?!\d)", text):
+        phone_spans.append((phone_match.start(), phone_match.end()))
+
+    def overlaps_phone(start, end):
+        for phone_start, phone_end in phone_spans:
+            if start < phone_end and end > phone_start:
+                return True
+        return False
 
     # ==========================================
     # EXTRACT ALL PRICES
@@ -81,6 +110,13 @@ def extract_price(state: GraphState):
 
         # Skip tiny useless numbers
         if float(number) < 1000 and unit is None:
+            continue
+
+        # Do not confuse contact numbers with prices.
+        if overlaps_phone(match.start(), match.end()):
+            continue
+
+        if unit is None and not _has_price_context(text, match.start(), match.end()):
             continue
 
         try:
@@ -110,7 +146,27 @@ def extract_price(state: GraphState):
 
     deposit_price = None
 
+    price_min = None
+
+    price_max = None
+
     inferred_type = existing_type
+
+    # ==========================================
+    # RANGE DETECTION
+    # ==========================================
+
+    if len(prices) >= 2:
+
+        for left, right in zip(prices, prices[1:]):
+
+            between = text[left["end"]: right["start"]].lower()
+
+            if re.search(r"\b(to|till|until|between|and|upto|up to)\b|[-–—]", between):
+
+                price_min = min(left["value"], right["value"])
+                price_max = max(left["value"], right["value"])
+                break
 
     # ==========================================
     # DETECT RENT / DEPOSIT
@@ -162,6 +218,10 @@ def extract_price(state: GraphState):
             deposit_price = prices[1]["value"]
 
         price = rent_price
+
+    elif price_min is not None and price_max is not None:
+
+        price = price_min
 
     # ==========================================
     # IF STILL UNKNOWN -> INFER USING PRICE
@@ -218,6 +278,10 @@ def extract_price(state: GraphState):
                 [p["value"] for p in prices]
             )
 
+        if price_min is not None:
+
+            price = price_min
+
     # ==========================================
     # FINAL SAFETY
     # ==========================================
@@ -234,12 +298,13 @@ def extract_price(state: GraphState):
 
         "price": price,
 
+        "price_min": price_min,
+
+        "price_max": price_max,
+
         "rent_price": rent_price,
 
         "deposit_price": deposit_price,
 
         "price_type": inferred_type,
-
-        # IMPORTANT
-        "request_type": inferred_type
     }

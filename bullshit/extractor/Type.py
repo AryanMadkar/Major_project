@@ -13,15 +13,21 @@ def extract_type(state: GraphState):
     # =========================
 
     requirement_keywords = [
+        "required",
+        "requirement",
         "need",
         "looking for",
         "require",
-        "requirement",
         "searching",
         "want",
+        "wanted",
+        "required flat",
+        "required for",
         "find me",
         "i am searching",
-        "i need"
+        "i need",
+        "out rate",
+        "outright"
     ]
 
     rent_keywords = [
@@ -54,6 +60,10 @@ def extract_type(state: GraphState):
         if re.search(rf"\b{re.escape(word)}\b", text):
             request_type = "requirement"
             break
+
+    if request_type == "unknown":
+        if re.search(r"\b(required|need|wanted|looking for|requirement)\b", text):
+            request_type = "requirement"
 
     # =========================
     # CHECK RENT
