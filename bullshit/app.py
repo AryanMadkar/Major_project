@@ -4,8 +4,27 @@ from main import graph
 
 
 app = Flask(__name__)
-# Preserve non-ASCII characters (e.g. currency symbols) in JSON responses
+# Preserve non-ASCII characters in JSON responses by default
 app.config["JSON_AS_ASCII"] = False
+
+# Simple in-process memcache with TTL (keyed by user_input hash)
+import time
+_MEMCACHE = {}
+_MEMCACHE_TTL = 60  # seconds; adjust as needed
+
+def _memcache_get(key):
+    rec = _MEMCACHE.get(key)
+    if not rec:
+        return None
+    value, expiry = rec
+    if expiry is not None and time.time() > expiry:
+        del _MEMCACHE[key]
+        return None
+    return value
+
+def _memcache_set(key, value, ttl=_MEMCACHE_TTL):
+    expiry = time.time() + ttl if ttl else None
+    _MEMCACHE[key] = (value, expiry)
 
 
 def _messages_to_text(messages):
@@ -50,13 +69,16 @@ def extract():
     if not user_input:
         return jsonify({"error": "messages is required"}), 400
 
-    result = graph.invoke(
-        {
+    # Use memcache to avoid repeated expensive graph invocations
+    cache_key = f"graph:{hash(user_input)}"
+    result = _memcache_get(cache_key)
+    if result is None:
+        result = graph.invoke({
             "user_input": user_input,
             "iteration_count": 0,
             "verification_history": [],
-        }
-    )
+        })
+        _memcache_set(cache_key, result)
 
     response_output = result.get("response_output") or {}
     if isinstance(response_output, dict):
@@ -67,10 +89,12 @@ def extract():
         }
 
     # If some extractor produced double-escaped Unicode (literal "\\uXXXX"),
-    # decode those safely for obvious fields like price display.
-    def _decode_escaped_unicode(val):
-        import json as _json
+    # decode those safely for obvious fields like price display, then strip
+    # currency symbols and return a clean numeric display string.
+    import json as _json
+    import re as _re
 
+    def _decode_escaped_unicode(val):
         if not isinstance(val, str):
             return val
         if "\\u" in val:
@@ -80,10 +104,24 @@ def extract():
                 return val
         return val
 
-    for k, v in list(response_output.items()):
-        # handle common display fields which may contain escaped currency
-        if k.endswith("_display") and isinstance(v, str):
-            response_output[k] = _decode_escaped_unicode(v)
+    def _strip_currency_symbols(s: str) -> str:
+        # Remove common currency symbols and keep digits, commas, periods, and spaces
+        return _re.sub(r"[\u00A2-\u00BF\u20A0-\u20CF$£€¥₹¢¤₪₩₽฿]+", "", s).strip()
+
+    # Remove any '*_display' presentation fields recursively so responses only
+    # contain canonical numeric values like `price`, `price_min`, `price_max`, etc.
+    def _remove_display_fields(obj):
+        if isinstance(obj, dict):
+            for key in list(obj.keys()):
+                if key.endswith("_display"):
+                    obj.pop(key, None)
+                else:
+                    _remove_display_fields(obj.get(key))
+        elif isinstance(obj, list):
+            for item in obj:
+                _remove_display_fields(item)
+
+    _remove_display_fields(response_output)
 
     return jsonify(response_output)
 
