@@ -1,35 +1,56 @@
 from .GraphState import GraphState
+
+
+def _format_inr(value):
+    if value is None:
+        return None
+    return f"₹{int(value):,}"
+
+
 # =========================
 # RESPONSE NODE
 # =========================
 def response_node(state: GraphState):
 
-    bhk = state.get("bhk")
+    output = {
+        "summary": {
+            "request_type": state.get("request_type"),
+            "bhk": state.get("bhk"),
+        },
+        "pricing": {
+            "price_type": state.get("price_type"),
+            "price": state.get("price"),
+            "price_display": _format_inr(state.get("price")),
+            "rent_price": state.get("rent_price"),
+            "rent_price_display": _format_inr(state.get("rent_price")),
+            "deposit_price": state.get("deposit_price"),
+            "deposit_price_display": _format_inr(state.get("deposit_price")),
+        },
+        "location": {
+            "primary_location": state.get("primary_location"),
+            "railway_line": state.get("railway_line"),
+            "locations": state.get("locations"),
+        },
+    }
 
-    if bhk is not None:
-        print(f"Detected BHK: {bhk}")
-    else:
-        print("No BHK found")
-    if state.get("request_type"):
-        print(f"Detected Request Type: {state['request_type']}")
-    else:
-        print("No Request Type found")
+    print("\n=== Extraction Summary ===")
+    print(f"Request Type: {output.get('summary', {}).get('request_type', 'unknown')}")
+    print(f"BHK: {output.get('summary', {}).get('bhk', 'not found')}")
 
-     # =====================================
-    # PRICE
-    # =====================================
+    pricing = output.get("pricing", {})
+    if pricing.get("price_display"):
+        print(f"Price: {pricing['price_display']}")
+    if pricing.get("rent_price_display"):
+        print(f"Rent: {pricing['rent_price_display']}")
+    if pricing.get("deposit_price_display"):
+        print(f"Deposit: {pricing['deposit_price_display']}")
 
-    if state.get("price"):
-        print(f"Detected Price: ₹{state['price']:,}")
+    location = output.get("location", {})
+    if location.get("primary_location"):
+        print(f"Primary Location: {location['primary_location']}")
+    if location.get("railway_line"):
+        print(f"Railway Line: {location['railway_line']}")
+    if location.get("locations"):
+        print(f"Detected Locations: {', '.join(location['locations'])}")
 
-    if state.get("rent_price"):
-        print(f"Detected Rent: ₹{state['rent_price']:,}")
-
-    if state.get("deposit_price"):
-        print(f"Detected Deposit: ₹{state['deposit_price']:,}")
-
-    if state.get("price_type"):
-        print(f"Price Type: {state['price_type']}")
-    
-
-    return state
+    return {"response_output": output}

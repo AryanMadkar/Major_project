@@ -1,4 +1,4 @@
-from typing import TypedDict, Optional
+from typing import Any, Optional, TypedDict
 # =========================
 # GRAPH STATE
 # =========================
@@ -18,3 +18,12 @@ class GraphState(TypedDict):
     deposit_price: Optional[int]
 
     price_type: Optional[str]
+    # location----------------------------------
+    
+    locations: Optional[list[str]]
+
+    primary_location: Optional[str]
+
+    railway_line: Optional[str]
+
+    response_output: Optional[dict[str, Any]]
