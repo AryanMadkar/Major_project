@@ -37,7 +37,11 @@ class GraphState(TypedDict):
 
     parking_count: Optional[int]
     property_subtype: Optional[str]
+    iteration_count: Optional[int]
 
+    verification_history: Optional[list]
+
+    should_continue: Optional[bool]
     all_detected_subtypes: Optional[list[str]]
     message_title: Optional[str]
 

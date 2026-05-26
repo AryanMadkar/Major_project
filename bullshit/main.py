@@ -14,12 +14,19 @@ from extractor.parking_extractor import extract_parking
 from extractor.property_subtype_extractor import extract_property_subtype
 from extractor.metadata_extractor import extract_metadata
 from advance_extractor.verification_node import audit_verification_agent
+from advance_extractor.correction_agent_1 import correction_agent_1
+from advance_extractor.correction_agent_2 import correction_agent_2
+from advance_extractor.iteration_controller import iteration_controller
+from advance_extractor.increment_iteration import increment_iteration
+from advance_extractor.router import retry_router
+
+
 builder = StateGraph(GraphState)
 builder.add_node("clean_text", clean_text_node)
 builder.add_node("extract_request_type", extract_type)
 builder.add_node("extract_bhk", extract_bhk)
 builder.add_node("response", response_node)
-builder.add_node("verify_response", audit_verification_agent)
+builder.add_node("audit_verification_agent", audit_verification_agent)
 builder.add_node("extract_price", extract_price)
 builder.add_node("extract_location", extract_location)
 builder.add_node("extract_furnishing", extract_furnishing)
@@ -28,6 +35,27 @@ builder.add_node("extract_parking", extract_parking)
 builder.add_node("extract_amenities", extract_amenities)
 builder.add_node("extract_property_subtype",extract_property_subtype)
 builder.add_node("extract_metadata", extract_metadata)
+
+
+builder.add_node(
+    "correction_agent_1",
+    correction_agent_1
+)
+
+builder.add_node(
+    "correction_agent_2",
+    correction_agent_2
+)
+
+builder.add_node(
+    "iteration_controller",
+    iteration_controller
+)
+
+builder.add_node(
+    "increment_iteration",
+    increment_iteration
+)
 builder.set_entry_point("clean_text")
 
 builder.add_edge("clean_text", "extract_request_type")
@@ -41,8 +69,19 @@ builder.add_edge("clean_text", "extract_amenities")
 builder.add_edge("clean_text", "extract_property_subtype")
 builder.add_edge("extract_request_type", "extract_price")
 builder.add_edge(["extract_request_type", "extract_bhk", "extract_price", "extract_location", "extract_furnishing", "extract_facing", "extract_parking", "extract_amenities", "extract_property_subtype", "extract_metadata"], "response")
-builder.add_edge("response", "verify_response")
-builder.add_edge("verify_response", END)
+builder.add_edge("response", "audit_verification_agent")
+builder.add_edge("audit_verification_agent", "iteration_controller")
+builder.add_conditional_edges(
+    "iteration_controller",
+    retry_router,
+    {
+        "retry": "correction_agent_1",
+        "end": END,
+    }
+)
+builder.add_edge("correction_agent_1", "correction_agent_2")
+builder.add_edge("correction_agent_2", "increment_iteration")
+builder.add_edge("increment_iteration", "audit_verification_agent")
 
 graph = builder.compile()
 
@@ -61,6 +100,9 @@ inbuild gym
 CALL
 9820067788
 CONTACT PERSON SURESH"""
+        ,
+        "iteration_count": 0,
+        "verification_history": []
     })
     structured_output = result.get("response_output")
     validation_report = result.get("validation_report")
