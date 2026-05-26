@@ -26,4 +26,8 @@ class GraphState(TypedDict):
 
     railway_line: Optional[str]
 
+    furnishing: Optional[str]
+
+    facing: Optional[str]
     response_output: Optional[dict[str, Any]]
+    

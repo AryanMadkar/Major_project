@@ -31,6 +31,10 @@ def response_node(state: GraphState):
             "railway_line": state.get("railway_line"),
             "locations": state.get("locations"),
         },
+        "attributes": {
+            "furnishing": state.get("furnishing"),
+            "facing": state.get("facing"),
+        },
     }
 
     print("\n=== Extraction Summary ===")
@@ -52,5 +56,10 @@ def response_node(state: GraphState):
         print(f"Railway Line: {location['railway_line']}")
     if location.get("locations"):
         print(f"Detected Locations: {', '.join(location['locations'])}")
+
+    attributes = output.get("attributes", {})
+    # Always print attributes (may be None)
+    print(f"Furnishing: {attributes.get('furnishing')}")
+    print(f"Facing: {attributes.get('facing')}")
 
     return {"response_output": output}
