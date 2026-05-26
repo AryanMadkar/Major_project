@@ -24,8 +24,7 @@ def clean_text_node(state: GraphState):
     # REMOVE SPECIAL SYMBOLS
     # keeps alphabets + numbers + spaces
     # =====================================
-    text = re.sub(r"[^a-z0-9\s]", " ", text)
-
+    text = re.sub(r"[^a-z0-9\s₹.,]", " ", text)
     # =====================================
     # REMOVE EXTRA SPACES
     # =====================================

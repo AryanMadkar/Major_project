@@ -18,6 +18,22 @@ def response_node(state: GraphState):
         print(f"Cleaned Text: {state['cleaned_text']}")
     else:
         print("No Cleaned Text found")
+        
+     # =====================================
+    # PRICE
+    # =====================================
+
+    if state.get("price"):
+        print(f"Detected Price: ₹{state['price']:,}")
+
+    if state.get("rent_price"):
+        print(f"Detected Rent: ₹{state['rent_price']:,}")
+
+    if state.get("deposit_price"):
+        print(f"Detected Deposit: ₹{state['deposit_price']:,}")
+
+    if state.get("price_type"):
+        print(f"Price Type: {state['price_type']}")
     
 
     return state
