@@ -34,8 +34,7 @@ if __name__ == "__main__":
         "user_input": """1 BHK
             Kanakya park
             With car parking
-            For sale
-            Asking 1.05 Cr"""
+            Asking 1.05 lakhs and deposit 2 lakhs"""
     })
     final_state = {key: value for key, value in result.items() if value is not None}
     print("Final Graph State:", final_state)

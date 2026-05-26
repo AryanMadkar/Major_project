@@ -3,13 +3,15 @@ from .GraphState import GraphState
 
 
 # ==========================================
-# HELPER FUNCTION
-# Converts Indian price strings to integer
+# PRICE CONVERTER
 # ==========================================
 
 def convert_price_to_number(value, unit):
 
     value = float(value)
+
+    if not unit:
+        return int(value)
 
     unit = unit.lower().strip()
 
@@ -26,23 +28,17 @@ def convert_price_to_number(value, unit):
 
 
 # ==========================================
-# PRICE EXTRACTOR NODE
+# MAIN EXTRACTOR
 # ==========================================
 
 def extract_price(state: GraphState):
 
     text = state["cleaned_text"]
 
-    request_type = state.get("request_type")
+    existing_type = state.get("request_type", "unknown")
 
     # ==========================================
-    # REGEX PATTERN
-    # Handles:
-    # 45 lakh
-    # 1.2 cr
-    # 75k
-    # 25000
-    # 2 crore
+    # PRICE PATTERN
     # ==========================================
 
     price_pattern = r"""
@@ -66,28 +62,37 @@ def extract_price(state: GraphState):
         )?
     """
 
-    matches = re.finditer(price_pattern, text, re.IGNORECASE | re.VERBOSE)
+    matches = re.finditer(
+        price_pattern,
+        text,
+        re.IGNORECASE | re.VERBOSE
+    )
 
     prices = []
+
+    # ==========================================
+    # EXTRACT ALL PRICES
+    # ==========================================
 
     for match in matches:
 
         number = match.group(1)
         unit = match.group(2)
 
-        # Skip tiny numbers
+        # Skip tiny useless numbers
         if float(number) < 1000 and unit is None:
             continue
 
         try:
 
-            if unit:
-                final_price = convert_price_to_number(number, unit)
-            else:
-                final_price = int(float(number))
+            final_price = convert_price_to_number(
+                number,
+                unit
+            )
 
             prices.append({
                 "value": final_price,
+                "unit": unit.lower() if unit else None,
                 "start": match.start(),
                 "end": match.end()
             })
@@ -96,85 +101,145 @@ def extract_price(state: GraphState):
             continue
 
     # ==========================================
-    # DEFAULT OUTPUT
+    # DEFAULTS
     # ==========================================
 
-    extracted_price = None
+    price = None
+
     rent_price = None
+
     deposit_price = None
-    price_type = None
+
+    inferred_type = existing_type
 
     # ==========================================
-    # SMART RENT EXTRACTION
+    # DETECT RENT / DEPOSIT
     # ==========================================
 
-    if request_type == "rent":
+    for p in prices:
 
-        for p in prices:
+        context = text[
+            max(0, p["start"] - 25):
+            p["end"] + 25
+        ]
 
-            # Nearby context
-            context = text[max(0, p["start"] - 25): p["end"] + 25]
+        # ======================================
+        # DEPOSIT DETECTION
+        # ======================================
 
-            # Deposit detection
-            if re.search(r"deposit|advance", context):
+        if re.search(
+            r"deposit|advance|token|maintenance",
+            context
+        ):
 
-                deposit_price = p["value"]
+            deposit_price = p["value"]
 
-            # Rent detection
-            elif re.search(r"rent|monthly", context):
+            inferred_type = "rent"
 
-                rent_price = p["value"]
+        # ======================================
+        # RENT DETECTION
+        # ======================================
 
-        # Fallback logic
+        elif re.search(
+            r"rent|monthly|lease|per month",
+            context
+        ):
+
+            rent_price = p["value"]
+
+            inferred_type = "rent"
+
+    # ==========================================
+    # FALLBACK RENT LOGIC
+    # ==========================================
+
+    if inferred_type == "rent":
+
         if rent_price is None and len(prices) >= 1:
             rent_price = prices[0]["value"]
 
         if deposit_price is None and len(prices) >= 2:
             deposit_price = prices[1]["value"]
 
-        extracted_price = rent_price
-        price_type = "rent"
+        price = rent_price
 
     # ==========================================
-    # SALE EXTRACTION
+    # IF STILL UNKNOWN -> INFER USING PRICE
     # ==========================================
 
-    elif request_type == "sale":
+    if inferred_type == "unknown":
 
         if prices:
-            extracted_price = max([p["value"] for p in prices])
 
-        price_type = "sale"
+            biggest_price = max(
+                [p["value"] for p in prices]
+            )
+
+            price = biggest_price
+
+            # ==================================
+            # CRORE ALWAYS SALE
+            # ==================================
+
+            crore_detected = any(
+                p["unit"] in ["cr", "crore", "crores"]
+                for p in prices
+            )
+
+            if crore_detected:
+
+                inferred_type = "sale"
+
+            # ==================================
+            # HIGH VALUE => SALE
+            # ==================================
+
+            elif biggest_price >= 5_00_000:
+
+                inferred_type = "sale"
+
+            # ==================================
+            # LOW VALUE => RENT
+            # ==================================
+
+            else:
+
+                inferred_type = "rent"
 
     # ==========================================
-    # REQUIREMENT EXTRACTION
+    # SALE TYPE
     # ==========================================
 
-    elif request_type == "requirement":
+    if inferred_type == "sale":
 
-        if prices:
-            extracted_price = max([p["value"] for p in prices])
+        if not price and prices:
 
-        price_type = "requirement"
+            price = max(
+                [p["value"] for p in prices]
+            )
 
     # ==========================================
-    # UNKNOWN TYPE
+    # FINAL SAFETY
     # ==========================================
 
-    else:
+    if not prices:
 
-        if prices:
-            extracted_price = max([p["value"] for p in prices])
+        inferred_type = "unknown"
 
-        price_type = "unknown"
+    # ==========================================
+    # RETURN
+    # ==========================================
 
     return {
 
-        "price": extracted_price,
+        "price": price,
 
         "rent_price": rent_price,
 
         "deposit_price": deposit_price,
 
-        "price_type": price_type
+        "price_type": inferred_type,
+
+        # IMPORTANT
+        "request_type": inferred_type
     }

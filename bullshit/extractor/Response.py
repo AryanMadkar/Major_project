@@ -14,11 +14,7 @@ def response_node(state: GraphState):
         print(f"Detected Request Type: {state['request_type']}")
     else:
         print("No Request Type found")
-    if state.get("cleaned_text"):
-        print(f"Cleaned Text: {state['cleaned_text']}")
-    else:
-        print("No Cleaned Text found")
-        
+
      # =====================================
     # PRICE
     # =====================================
