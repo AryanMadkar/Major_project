@@ -92,12 +92,16 @@ class GraphState(BaseModel):
     # VALIDATION / PIPELINE
     # =================================
 
-    validation_report: dict[str, Any] | None = None
+
+    validation_report: Annotated[dict[str, Any],_merge_dicts] = {}
+
+
 
     verification_history: list[dict[str, Any]] | None = None
 
     iteration_count: int | None = None
 
+    
     should_continue: bool | None = None
 
     # =================================
