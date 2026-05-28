@@ -1,53 +1,65 @@
 import re
+import emoji
 import unicodedata
-from typing import TypedDict, Optional
+
 from .GraphState import GraphState
+
+
+# =========================
+# PRECOMPILED REGEX
+# =========================
+
+SPECIAL_CHAR_PATTERN = re.compile(
+    r"[^a-z0-9\s₹.,]",
+    re.IGNORECASE
+)
+
+MULTISPACE_PATTERN = re.compile(r"\s+")
+
 
 # =========================
 # TEXT CLEANER NODE
 # =========================
+
 def clean_text_node(state: GraphState):
 
-    text = state["user_input"]
+    text = state.get("user_input", "")
+
+    if not text:
+        return {
+            "cleaned_text": ""
+        }
+
+    # =====================================
+    # UNICODE NORMALIZATION
+    # =====================================
+
+    text = unicodedata.normalize("NFKC", text)
 
     # =====================================
     # LOWERCASE
     # =====================================
+
     text = text.lower()
 
     # =====================================
     # REMOVE EMOJIS
     # =====================================
-    text = remove_emojis(text)
+
+    text = emoji.replace_emoji(text, replace="")
 
     # =====================================
     # REMOVE SPECIAL SYMBOLS
-    # keeps alphabets + numbers + spaces
     # =====================================
-    text = re.sub(r"[^a-z0-9\s₹.,]", " ", text)
+
+    text = SPECIAL_CHAR_PATTERN.sub(" ", text)
+
     # =====================================
     # REMOVE EXTRA SPACES
     # =====================================
-    text = re.sub(r"\s+", " ", text).strip()
+
+    text = MULTISPACE_PATTERN.sub(" ", text).strip()
 
     return {
         "cleaned_text": text
     }
-
-
-# =========================
-# EMOJI REMOVER
-# =========================
-def remove_emojis(text):
-
-    cleaned = []
-
-    for char in text:
-
-        # Skip emoji unicode ranges
-        if unicodedata.category(char) == "So":
-            continue
-
-        cleaned.append(char)
-
-    return "".join(cleaned)
