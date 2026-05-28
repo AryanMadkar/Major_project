@@ -115,7 +115,7 @@ judge_prompt = ChatPromptTemplate.from_messages([
 
 Your final output must be structured using the VerificationResponse schema.
 For each field:
-- Set 'field_name' to the verified field.
+- Set 'field_name' to the verified field identifier exactly (use 'summary.bhk', 'property.property_subtype', or 'summary.request_type').
 - Set 'extracted_value' to the exact value that was extracted and provided to you for verification.
 - Write a detailed step-by-step 'reasoning' summarizing the findings from the investigation and your final conclusion.
 - Set 'is_correct' to true ONLY if the field is 100% correct, fully supported, and completely unambiguous. Otherwise, set it to false.
@@ -157,9 +157,9 @@ def verify_property_core(state: GraphState):
     text = state.cleaned_text or ""
 
     fields_data = (
-        f"BHK: {state.bhk}\n"
-        f"PROPERTY SUBTYPE: {state.property_subtype}\n"
-        f"REQUEST TYPE: {state.request_type}"
+        f"summary.bhk: {state.bhk}\n"
+        f"property.property_subtype: {state.property_subtype}\n"
+        f"summary.request_type: {state.request_type}"
     )
 
     # Step 1: Run forensic investigation

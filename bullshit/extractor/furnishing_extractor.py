@@ -61,8 +61,13 @@ def extract_furnishing(state: GraphState):
     }
 
     for word in FULLY_FURNISHED:
-        if re.search(rf"\b{re.escape(word)}\b", text):
+        for m in re.finditer(rf"\b{re.escape(word)}\b", text):
+            start_pos = m.start()
+            prefix = text[max(0, start_pos - 10):start_pos]
+            if "semi" in prefix or "un" in prefix or "not" in prefix:
+                continue
             scores["fully_furnished"] += 5
+            break
 
     for word in SEMI_FURNISHED:
         if re.search(rf"\b{re.escape(word)}\b", text):

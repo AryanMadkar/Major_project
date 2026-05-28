@@ -125,3 +125,20 @@ class GraphState(BaseModel):
     repair_history: Annotated[list[dict[str, Any]], _merge_lists] = []
 
     fixed_fields: Annotated[list[str], _merge_lists] = []
+    # =================================
+    # REPAIR SYSTEM
+    # =================================
+
+    failed_fields: list[str] | None = None
+
+    repair_candidates: Annotated[
+        list[dict[str, Any]],
+        _merge_lists
+    ] = []
+
+    repair_attempts: Annotated[
+        dict[str, int],
+        _merge_dicts
+    ] = {}
+
+    reverification_required: list[str] | None = None

@@ -119,7 +119,7 @@ judge_prompt = ChatPromptTemplate.from_messages([
 
 Your final output must be structured using the VerificationResponse schema.
 For each field:
-- Set 'field_name' to the verified field.
+- Set 'field_name' to the verified field identifier exactly (use 'location.primary_location', 'location.locations', 'location.railway_line', 'attributes.furnishing', or 'attributes.facing').
 - Set 'extracted_value' to the exact value that was extracted and provided to you for verification.
 - Write a detailed step-by-step 'reasoning' summarizing the findings from the investigation and your final conclusion.
 - Set 'is_correct' to true ONLY if the field is 100% correct, fully supported, and completely unambiguous. Otherwise, set it to false.
@@ -163,11 +163,11 @@ def verify_contextual(state: GraphState):
     locations_str = ", ".join(state.locations) if isinstance(state.locations, list) else str(state.locations)
 
     fields_data = (
-        f"PRIMARY LOCATION: {state.primary_location}\n"
-        f"LOCATIONS: {locations_str}\n"
-        f"RAILWAY LINE: {state.railway_line}\n"
-        f"FURNISHING: {state.furnishing}\n"
-        f"FACING: {state.facing}"
+        f"location.primary_location: {state.primary_location}\n"
+        f"location.locations: {locations_str}\n"
+        f"location.railway_line: {state.railway_line}\n"
+        f"attributes.furnishing: {state.furnishing}\n"
+        f"attributes.facing: {state.facing}"
     )
 
     # Step 1: Run forensic investigation

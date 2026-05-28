@@ -66,7 +66,7 @@ def extract():
         response_output = {
             key: value
             for key, value in response_output.items()
-            if key != "validation_report"
+            if key not in ("validation_report", "extraction_meta")
         }
 
     # If some extractor produced double-escaped Unicode (literal "\\uXXXX"),

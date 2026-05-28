@@ -127,30 +127,49 @@ def build_traceable_meta(
 
 ) -> Dict[str, Any]:
 
+    # 1. Base confidence
+    confidence = default_confidence if value not in (None, [], {}) else 0
+    
+    # 2. Check if we found a source span. If not, penalize confidence (fallback/inferred values)
+    spans = state.extraction_spans or {}
+    has_span = field_name in spans
+    
+    if value not in (None, [], {}) and not has_span:
+        # If there's a value but no source span (e.g. BHK-only fallback or inferred price)
+        confidence -= 20
+        
+    # 3. Factor in repair history (each repair attempt penalizes confidence by 10 points)
+    history = state.repair_history or []
+    field_history = [
+        item
+        for item in history
+        if item.get("field") == field_name
+    ]
+    
+    if field_history:
+        confidence -= 10 * len(field_history)
+        
+    # Ensure confidence stays within [0, 100]
+    confidence = max(0, min(100, int(confidence)))
+
     meta = {
 
         "value": value,
 
         "source": default_source,
 
-        "confidence": (
-            default_confidence
-            if value not in (None, [], {})
-            else 0
-        ),
+        "confidence": confidence,
 
         "source_spans": [],
 
-        "repair_history": []
+        "repair_history": field_history
     }
 
     # ======================================
     # EXTRACTION SPANS
     # ======================================
 
-    spans = state.extraction_spans or {}
-
-    if field_name in spans:
+    if has_span:
 
         span_info = spans[field_name]
 
@@ -164,23 +183,6 @@ def build_traceable_meta(
 
             "extractor": span_info.get("extractor")
         })
-
-    # ======================================
-    # REPAIR HISTORY
-    # ======================================
-
-    history = state.repair_history or []
-
-    field_history = [
-
-        item
-
-        for item in history
-
-        if item.get("field") == field_name
-    ]
-
-    meta["repair_history"] = field_history
 
     return meta
 

@@ -234,10 +234,15 @@ def extract_property_subtype(state: GraphState):
     # SMART FALLBACKS
     # ======================================
 
+    is_fallback = False
     if final_subtype is None:
-        # BHK usually apartment
-        if re.search(r"\bbhk\b", text):
+        # BHK usually apartment, but check if there are commercial indicators in the text
+        commercial_indicators = {"office", "shop", "showroom", "commercial", "warehouse", "godown", "shed", "industrial", "gala", "plot", "land"}
+        has_commercial_words = any(re.search(rf"\b{re.escape(word)}\b", text) for word in commercial_indicators)
+        
+        if re.search(r"\bbhk\b", text) and not has_commercial_words:
             final_subtype = "apartment"
+            is_fallback = True
 
     # ======================================
     # RECORD SPANS
@@ -247,19 +252,14 @@ def extract_property_subtype(state: GraphState):
         matched_word = None
         start = -1
         end = -1
-        for keyword in PROPERTY_SUBTYPE_MAP.get(final_subtype, []):
-            m = re.search(rf"\b{re.escape(keyword)}\b", text)
-            if m:
-                matched_word = m.group(0)
-                start = m.start()
-                end = m.end()
-                break
-        if not matched_word and final_subtype == "apartment" and "bhk" in text:
-            m = re.search(r"\bbhk\b", text)
-            if m:
-                matched_word = m.group(0)
-                start = m.start()
-                end = m.end()
+        if not is_fallback:
+            for keyword in PROPERTY_SUBTYPE_MAP.get(final_subtype, []):
+                m = re.search(rf"\b{re.escape(keyword)}\b", text)
+                if m:
+                    matched_word = m.group(0)
+                    start = m.start()
+                    end = m.end()
+                    break
         if matched_word:
             extraction_spans["property.property_subtype"] = {
                 "value": final_subtype,

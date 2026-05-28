@@ -43,6 +43,92 @@ from verifier.verify_contextual import (
     verify_contextual
 )
 
+
+# =========================================================
+# REPAIR AGENTS
+# =========================================================
+
+from Repair_agents.bhk_repair import repair_bhk_llm
+
+from Repair_agents.price_repair import repair_price_llm
+
+from Repair_agents.request_type_repair import (
+    repair_request_type_llm
+)
+
+from Repair_agents.property_subtype_repair import (
+    repair_property_subtype_llm
+)
+
+from Repair_agents.location_repair import (
+    repair_location_llm
+)
+
+from  Repair_agents.parking_repair import (
+    repair_parking_llm
+)
+
+from  Repair_agents.furnishing_repair import (
+    repair_furnishing_llm
+)
+
+from  Repair_agents.facing_repair import (
+    repair_facing_llm
+)
+
+from repair.repair_cycle_controller import (
+    repair_cycle_controller
+)
+
+from repair.increment_repair_iteration import (
+    increment_repair_iteration
+)
+
+from repair.repair_router import repair_router
+from repair.repair_dispatcher import repair_dispatcher
+from repair.reverification_router import reverification_router
+
+# =========================================================
+# REPAIR ORCHESTRATION
+# =========================================================
+
+from repair.verification_aggregator import (
+    verification_aggregator
+)
+
+from repair.apply_repairs import (
+    apply_repairs
+)
+
+# =========================================================
+# ROUTING FUNCTIONS
+# =========================================================
+
+def route_repair_agents(state: GraphState):
+    failed = state.failed_fields or []
+    attempts = state.repair_attempts or {}
+    from repair.repair_dispatcher import FIELD_TO_AGENT
+    
+    agents = set()
+    for field in failed:
+        if attempts.get(field, 0) < 2:  # MAX_REPAIR_ATTEMPTS = 2
+            agent = FIELD_TO_AGENT.get(field)
+            if agent:
+                agents.add(agent)
+    return list(agents)
+
+def route_verifiers(state: GraphState):
+    if state.reverification_required is None:
+        return ["verify_property_core", "verify_financials", "verify_contextual"]
+    return reverification_router(state)
+
+def combined_repair_router(state: GraphState):
+    if (state.iteration_count or 0) >= 2:  # MAX_GLOBAL_REPAIR_CYCLES = 2
+        return "finalize"
+    route = repair_router(state)
+    return "repair" if route == "repair" else "finalize"
+
+
 # =========================================================
 # GRAPH
 # =========================================================
@@ -52,6 +138,7 @@ builder = StateGraph(GraphState)
 # =========================================================
 # ADD NODES
 # =========================================================
+
 
 builder.add_node(
     "clean_text",
@@ -114,6 +201,69 @@ builder.add_node(
 )
 
 # =========================================================
+# REPAIR AGENTS
+# =========================================================
+
+builder.add_node(
+    "repair_bhk",
+    repair_bhk_llm
+)
+
+builder.add_node(
+    "repair_price",
+    repair_price_llm
+)
+
+builder.add_node(
+    "repair_request_type",
+    repair_request_type_llm
+)
+
+builder.add_node(
+    "repair_property_subtype",
+    repair_property_subtype_llm
+)
+
+builder.add_node(
+    "repair_location",
+    repair_location_llm
+)
+
+builder.add_node(
+    "repair_parking",
+    repair_parking_llm
+)
+
+builder.add_node(
+    "repair_furnishing",
+    repair_furnishing_llm
+)
+
+builder.add_node(
+    "repair_facing",
+    repair_facing_llm
+)
+
+# =========================================================
+# ORCHESTRATION
+# =========================================================
+
+builder.add_node(
+    "verification_aggregator",
+    verification_aggregator
+)
+
+builder.add_node(
+    "apply_repairs",
+    apply_repairs
+)
+
+builder.add_node(
+    "repair_dispatcher",
+    repair_dispatcher
+)
+
+# =========================================================
 # VERIFICATION NODES
 # =========================================================
 
@@ -127,6 +277,15 @@ builder.add_node(
     verify_financials
 )
 
+builder.add_node(
+    "repair_cycle_controller",
+    lambda state: {}
+)
+
+builder.add_node(
+    "increment_repair_iteration",
+    increment_repair_iteration
+)
 builder.add_node(
     "verify_contextual",
     verify_contextual
@@ -220,36 +379,132 @@ builder.add_edge(
 )
 
 # =========================================================
-# PARALLEL VERIFICATION
+# PARALLEL VERIFICATION & LOCALIZED REVERIFICATION
 # =========================================================
 
-builder.add_edge(
+builder.add_conditional_edges(
     "response",
-    "verify_property_core"
-)
-
-builder.add_edge(
-    "response",
-    "verify_financials"
-)
-
-builder.add_edge(
-    "response",
-    "verify_contextual"
+    route_verifiers,
+    {
+        "verify_property_core": "verify_property_core",
+        "verify_financials": "verify_financials",
+        "verify_contextual": "verify_contextual"
+    }
 )
 
 # =========================================================
-# END
+# END (Separate edges to support dynamic skipped nodes in join)
+# =========================================================
+
+builder.add_edge("verify_property_core", "verification_aggregator")
+builder.add_edge("verify_financials", "verification_aggregator")
+builder.add_edge("verify_contextual", "verification_aggregator")
+
+# =========================================================
+# PARALLEL REPAIR EXECUTION
 # =========================================================
 
 builder.add_edge(
-    [
-        "verify_property_core",
-        "verify_financials",
-        "verify_contextual"
-    ],
-    END
+    "repair_bhk",
+    "apply_repairs"
 )
+
+builder.add_edge(
+    "repair_price",
+    "apply_repairs"
+)
+
+builder.add_edge(
+    "repair_request_type",
+    "apply_repairs"
+)
+
+builder.add_edge(
+    "repair_property_subtype",
+    "apply_repairs"
+)
+
+builder.add_edge(
+    "repair_location",
+    "apply_repairs"
+)
+
+builder.add_edge(
+    "repair_parking",
+    "apply_repairs"
+)
+
+builder.add_edge(
+    "repair_furnishing",
+    "apply_repairs"
+)
+
+builder.add_edge(
+    "repair_facing",
+    "apply_repairs"
+)
+
+
+# =========================================================
+# REVERIFY (via response to rebuild output)
+# =========================================================
+
+builder.add_edge(
+    "apply_repairs",
+    "response"
+)
+
+# =========================================================
+# FINAL RESPONSE
+# =========================================================
+
+builder.add_edge(
+    "verification_aggregator",
+    "repair_cycle_controller"
+)
+
+builder.add_conditional_edges(
+
+    "repair_cycle_controller",
+
+    combined_repair_router,
+
+    {
+
+        "repair":
+            "increment_repair_iteration",
+
+        "finalize":
+            END
+    }
+)
+
+# =========================================================
+# DYNAMIC REPAIR DISPATCHING
+# =========================================================
+
+builder.add_edge(
+    "increment_repair_iteration",
+    "repair_dispatcher"
+)
+
+builder.add_conditional_edges(
+    "repair_dispatcher",
+    route_repair_agents,
+    {
+        "repair_bhk": "repair_bhk",
+        "repair_price": "repair_price",
+        "repair_request_type": "repair_request_type",
+        "repair_property_subtype": "repair_property_subtype",
+        "repair_location": "repair_location",
+        "repair_parking": "repair_parking",
+        "repair_furnishing": "repair_furnishing",
+        "repair_facing": "repair_facing"
+    }
+)
+
+
+
 
 # =========================================================
 # COMPILE

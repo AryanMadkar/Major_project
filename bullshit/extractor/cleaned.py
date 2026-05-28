@@ -9,7 +9,7 @@ from .GraphState import GraphState
 # =========================
 
 SPECIAL_CHAR_PATTERN = re.compile(
-    r"[^a-z0-9\s₹.,]",
+    r"[^a-z0-9\s₹.,@/\-]",
     re.IGNORECASE
 )
 

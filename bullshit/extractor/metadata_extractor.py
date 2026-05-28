@@ -301,32 +301,29 @@ def extract_metadata(state: GraphState):
     contact_numbers = regex_numbers.copy()
 
     # =====================================================
-    # ONLY CALL LLM IF NEEDED
+    # CALL LLM FOR NAMES (Always call LLM to ensure names are extracted)
     # =====================================================
 
-    needs_llm = len(contact_numbers) == 0
+    try:
 
-    if needs_llm:
+        llm = get_llm()
 
-        try:
+        response = llm.invoke(
+            CONTACT_PROMPT + "\n\nMESSAGE:\n" + text
+        )
 
-            llm = get_llm()
+        if response:
 
-            response = llm.invoke(
-                CONTACT_PROMPT + "\n\nMESSAGE:\n" + text
+            contact_people = response.contacts or []
+
+            # Also extend numbers found by LLM (some tricky formatting regex might miss)
+            contact_numbers.extend(
+                response.numbers or []
             )
 
-            if response:
+    except Exception as e:
 
-                contact_people = response.contacts or []
-
-                contact_numbers.extend(
-                    response.numbers or []
-                )
-
-        except Exception as e:
-
-            print("Metadata LLM Error:", e)
+        print("Metadata LLM Error:", e)
 
     # =====================================================
     # CLEANING

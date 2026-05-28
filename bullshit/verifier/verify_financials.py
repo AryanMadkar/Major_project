@@ -70,10 +70,15 @@ For each field, you must write a detailed, unbiased investigation report contain
 3. VERDICT ANALYSIS: Synthesize the findings and explain whether the extraction is 100% correct, partially correct, or incorrect.
 
 VERIFICATION RULES BY FIELD:
-1. PRICE:
-   - Must match the exact financial amount, currency, and unit in the text. E.g., "1.10 CR" -> 11000000.
-   - Pay close attention to numerical values: verify that the extracted price doesn't confuse phone numbers, area values (sq ft), or BHK numbers.
+1. PRICES (PRICE, RENT PRICE, DEPOSIT PRICE):
+   - 'pricing.price' is the primary price. For rental requests, this should generally be the same as 'pricing.rent_price'. For sale requests, it is the purchase price.
+   - 'pricing.rent_price' must match the monthly rent value.
+   - 'pricing.deposit_price' must match the security deposit or advance value.
+   - Pay close attention to numerical values: verify that the extracted prices don't confuse phone numbers, area values (sq ft), BHK numbers, or other price fields (e.g. rent shouldn't be mapped to deposit or vice-versa).
    - If the price is a range (e.g. "1 to 1.10 Cr") and the extraction fails to capture it or captures only one endpoint incorrectly, mark it incorrect.
+   - Perform cross-field consistency checks:
+     - For rental properties, the security deposit is typically greater than or equal to the monthly rent. If the deposit is extracted as less than the monthly rent, audit it extremely carefully and flag if suspicious.
+     - For rental properties, if request_type is 'rent', the primary price ('pricing.price') must align with 'pricing.rent_price'.
 2. PARKING COUNT:
    - Must match the exact number of parking spaces mentioned in the text.
    - If the text does not mention parking, or says "parking available" without specifying a number, then parking count should be null/None. Any non-zero count extraction in this case is incorrect.
@@ -114,7 +119,7 @@ judge_prompt = ChatPromptTemplate.from_messages([
 
 Your final output must be structured using the VerificationResponse schema.
 For each field:
-- Set 'field_name' to the verified field.
+- Set 'field_name' to the verified field identifier exactly (use 'pricing.price', 'pricing.rent_price', 'pricing.deposit_price', 'parking.parking_count', or 'parking.parking_type').
 - Set 'extracted_value' to the exact value that was extracted and provided to you for verification.
 - Write a detailed step-by-step 'reasoning' summarizing the findings from the investigation and your final conclusion.
 - Set 'is_correct' to true ONLY if the field is 100% correct, fully supported, and completely unambiguous. Otherwise, set it to false.
@@ -156,9 +161,11 @@ def verify_financials(state: GraphState):
     text = state.cleaned_text or ""
 
     fields_data = (
-        f"PRICE: {state.price}\n"
-        f"PARKING COUNT: {state.parking_count}\n"
-        f"PARKING TYPE: {state.parking_type}"
+        f"pricing.price: {state.price}\n"
+        f"pricing.rent_price: {state.rent_price}\n"
+        f"pricing.deposit_price: {state.deposit_price}\n"
+        f"parking.parking_count: {state.parking_count}\n"
+        f"parking.parking_type: {state.parking_type}"
     )
 
     # Step 1: Run forensic investigation

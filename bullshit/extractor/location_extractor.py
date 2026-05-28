@@ -105,6 +105,45 @@ MUMBAI_LOCALITIES = [
     "bhandup",
     "dahisar",
     "virar",
+    "bandra west",
+    "bandra east",
+    "khar west",
+    "khar east",
+    "santacruz west",
+    "santacruz east",
+    "vile parle west",
+    "vile parle east",
+    "juhu",
+    "versova",
+    "seven bungalows",
+    "four bungalows",
+    "oshivara",
+    "sher-e-punjab",
+    "marol",
+    "saki naka",
+    "midc",
+    "jvlr",
+    "kanjurmarg",
+    "vikhroli west",
+    "vikhroli east",
+    "kurla west",
+    "kurla east",
+    "sudarshan nagar",
+    "samata nagar",
+    "dindoshi",
+    "gokuldham",
+    "film city",
+    "royal palms",
+    "borivali",
+    "kandivali",
+    "malad",
+    "goregaon",
+    "andheri",
+    "jogeshwari",
+    "santacruz",
+    "vile parle",
+    "khar",
+    "bandra",
 ]
 
 
@@ -154,8 +193,15 @@ def _append_pattern_spans(patterns, text):
     spans = []
     for pattern in patterns:
         for match in re.finditer(pattern, text):
+            val = match.group(0).strip()
+            # If pattern matches near..., we perform stopword filtering
+            if "near" in pattern:
+                words = set(re.findall(r"\b[a-z]{2,20}\b", val.lower()))
+                stopwords = {"preferred", "required", "needed", "need", "wanted", "available", "negotiable", "immediate", "any", "only", "looking", "good", "best", "ok", "no", "yes"}
+                if words.intersection(stopwords):
+                    continue
             spans.append({
-                "value": match.group(0).strip(),
+                "value": val,
                 "start": match.start(),
                 "label": None,
             })

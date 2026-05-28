@@ -54,6 +54,10 @@ PRICE_WORDS = {
     "lease",
     "quote",
     "quoted",
+    "@",
+    "negotiable",
+    "neg",
+    "/-",
 }
 
 DEPOSIT_WORDS = {
@@ -61,6 +65,8 @@ DEPOSIT_WORDS = {
     "advance",
     "token",
     "maintenance",
+    "dep",
+    "dp",
 }
 
 RENT_WORDS = {
@@ -68,6 +74,10 @@ RENT_WORDS = {
     "monthly",
     "lease",
     "per month",
+    "pm",
+    "p.m.",
+    "p/m",
+    "rented",
 }
 
 AREA_WORDS = {
@@ -122,6 +132,153 @@ def convert_price_to_number(value, unit):
 def has_any_keyword(context, keywords):
 
     return any(word in context for word in keywords)
+
+
+def min_distance_to_keywords(start, end, keywords, text):
+    min_dist = 999999
+    escaped_keywords = []
+    for kw in keywords:
+        if kw == "@":
+            escaped_keywords.append(r"@")
+        elif kw == "/-":
+            escaped_keywords.append(r"/-")
+        else:
+            escaped_kw = re.escape(kw)
+            escaped_keywords.append(rf"\b{escaped_kw}\b")
+    pattern_str = "|".join(escaped_keywords)
+    try:
+        pattern = re.compile(pattern_str, re.IGNORECASE)
+    except Exception:
+        return min_dist
+
+    for match in pattern.finditer(text):
+        m_start = match.start()
+        m_end = match.end()
+        if m_end <= start:
+            dist = start - m_end
+        elif m_start >= end:
+            dist = m_start - end
+        else:
+            dist = 0
+        if dist < min_dist:
+            min_dist = dist
+    return min_dist
+
+
+def resolve_price_conflicts(prices, request_type, text, price_min=None, price_max=None):
+    assigned_rent = None
+    assigned_deposit = None
+    assigned_price = None
+    
+    rent_match = None
+    deposit_match = None
+    price_match = None
+    
+    assignments = []
+    for i, item in enumerate(prices):
+        # Calculate distance scores
+        rent_dist = min_distance_to_keywords(item["start"], item["end"], RENT_WORDS, text)
+        deposit_dist = min_distance_to_keywords(item["start"], item["end"], DEPOSIT_WORDS, text)
+        price_dist = min_distance_to_keywords(item["start"], item["end"], PRICE_WORDS, text)
+        
+        rent_score = max(0, 100 - rent_dist * 3)
+        deposit_score = max(0, 100 - deposit_dist * 3)
+        price_score = max(0, 100 - price_dist * 3)
+        
+        # Context checks for @ just before
+        pre_context = text[max(0, item["start"] - 3):item["start"]].strip()
+        if pre_context.endswith("@"):
+            rent_score += 80
+            
+        post_context = text[item["end"]:item["end"] + 3].strip()
+        if post_context.startswith("/-"):
+            rent_score += 20
+            price_score += 20
+            
+        # Store scores in item
+        item["rent_score"] = rent_score
+        item["deposit_score"] = deposit_score
+        item["price_score"] = price_score
+        
+        assignments.append((i, "rent", rent_score))
+        assignments.append((i, "deposit", deposit_score))
+        assignments.append((i, "price", price_score))
+        
+    assignments.sort(key=lambda x: x[2], reverse=True)
+    
+    assigned_candidates = set()
+    assigned_roles = set()
+    
+    for idx, role, score in assignments:
+        if idx in assigned_candidates or role in assigned_roles:
+            continue
+        if score > 20:
+            assigned_candidates.add(idx)
+            assigned_roles.add(role)
+            if role == "rent":
+                assigned_rent = prices[idx]["value"]
+                rent_match = prices[idx]
+            elif role == "deposit":
+                assigned_deposit = prices[idx]["value"]
+                deposit_match = prices[idx]
+            elif role == "price":
+                assigned_price = prices[idx]["value"]
+                price_match = prices[idx]
+                
+    # If rent request type and only one price was found:
+    if len(prices) == 1 and request_type == "rent":
+        item = prices[0]
+        assigned_rent = item["value"]
+        rent_match = item
+        assigned_price = item["value"]
+        price_match = item
+        assigned_candidates.add(0)
+    else:
+        unassigned_indices = [i for i in range(len(prices)) if i not in assigned_candidates]
+        for idx in unassigned_indices:
+            item = prices[idx]
+            val = item["value"]
+            
+            # If the candidate was already captured in a price range, do not fallback-assign it to other fields
+            is_in_range = False
+            if price_min is not None and (val == price_min or val == price_max):
+                is_in_range = True
+                
+            if is_in_range:
+                continue
+                
+            if request_type == "rent":
+                if assigned_rent is None and item["rent_score"] > 20:
+                    assigned_rent = val
+                    rent_match = item
+                    assigned_candidates.add(idx)
+                elif assigned_deposit is None and item["deposit_score"] > 20:
+                    assigned_deposit = val
+                    deposit_match = item
+                    assigned_candidates.add(idx)
+            elif request_type == "sale":
+                if assigned_price is None and item["price_score"] > 20:
+                    assigned_price = val
+                    price_match = item
+                    assigned_candidates.add(idx)
+                
+    # Swap rent and deposit if deposit < rent (except if one of them is null)
+    if assigned_deposit is not None and assigned_rent is not None:
+        if assigned_deposit < assigned_rent:
+            assigned_deposit, assigned_rent = assigned_rent, assigned_deposit
+            deposit_match, rent_match = rent_match, deposit_match
+            
+    # Re-align final price
+    if request_type == "rent":
+        if assigned_rent is not None:
+            assigned_price = assigned_rent
+            price_match = rent_match
+    elif request_type == "sale":
+        if assigned_price is not None:
+            assigned_rent = None
+            rent_match = None
+            
+    return assigned_price, price_match, assigned_rent, rent_match, assigned_deposit, deposit_match
 
 
 # =========================================================
@@ -180,19 +337,6 @@ def extract_price(state: GraphState):
             end + 35
         ].lower()
 
-        # ================================================
-        # FAST FILTERS
-        # ================================================
-
-        if "bhk" in context:
-            continue
-
-        if has_any_keyword(context, AREA_WORDS):
-            continue
-
-        if unit is None and not has_any_keyword(context, PRICE_WORDS):
-            continue
-
         try:
 
             value = convert_price_to_number(
@@ -201,6 +345,19 @@ def extract_price(state: GraphState):
             )
 
         except Exception:
+            continue
+
+        # ================================================
+        # FAST FILTERS
+        # ================================================
+
+        if unit is None and value < 500:
+            continue
+
+        if has_any_keyword(context, AREA_WORDS):
+            continue
+
+        if unit is None and not has_any_keyword(context, PRICE_WORDS):
             continue
 
         # ================================================
@@ -278,36 +435,16 @@ def extract_price(state: GraphState):
                 break
 
     # =====================================================
-    # RENT / DEPOSIT
+    # RENT / DEPOSIT / FINAL PRICE RESOLVER (Fix #1 & #3)
     # =====================================================
 
-    rent_price = None
-    deposit_price = None
-    rent_price_match = None
-    deposit_price_match = None
-
-    for item in prices:
-        context = item["context"]
-        if deposit_price is None and has_any_keyword(context, DEPOSIT_WORDS):
-            deposit_price = item["value"]
-            deposit_price_match = item
-        if rent_price is None and has_any_keyword(context, RENT_WORDS):
-            rent_price = item["value"]
-            rent_price_match = item
-
-    # =====================================================
-    # FINAL PRICE
-    # =====================================================
-
-    best_price = max(
+    final_price, best_price, rent_price, rent_price_match, deposit_price, deposit_price_match = resolve_price_conflicts(
         prices,
-        key=lambda x: (
-            x["score"],
-            x["value"]
-        )
+        request_type,
+        text,
+        price_min=price_min,
+        price_max=price_max
     )
-
-    final_price = best_price["value"]
 
     # =====================================================
     # REQUEST TYPE INFERENCE
