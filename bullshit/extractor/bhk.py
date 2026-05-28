@@ -1,11 +1,17 @@
 import re
 from .GraphState import GraphState
+
+# Compile regex once at startup
+BHK_PATTERN = re.compile(
+    r'\b(\d{1,2})\s*-?\s*bhk\b',
+    re.IGNORECASE
+)
 # =========================
 # REGEX EXTRACTOR NODE
 # =========================
 def extract_bhk(state: GraphState):
 
-    text = state["cleaned_text"]
+    text = state.get("cleaned_text", "")
 
     # Matches:
     # 1 BHK
@@ -13,9 +19,7 @@ def extract_bhk(state: GraphState):
     # 3-bhk
     # etc
 
-    pattern = r'(\d+)\s*[-]?\s*bhk'
-
-    match = re.search(pattern, text, re.IGNORECASE)
+    match = BHK_PATTERN.search(text)
 
     if match:
         bhk = int(match.group(1))
