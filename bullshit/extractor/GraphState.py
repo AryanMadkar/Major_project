@@ -1,6 +1,25 @@
-from typing import Any
+from typing import Any, Annotated
+import operator
 
 from pydantic import BaseModel
+
+
+# =================================
+# MERGE REDUCERS
+# These tell LangGraph how to combine
+# concurrent updates from parallel nodes.
+# =================================
+
+def _merge_dicts(a: dict | None, b: dict | None) -> dict:
+    """Merge two dicts, with b overwriting keys in a."""
+    result = dict(a or {})
+    result.update(b or {})
+    return result
+
+
+def _merge_lists(a: list | None, b: list | None) -> list:
+    """Append new items from b to a (dedup by dict identity not needed here)."""
+    return list(a or []) + list(b or [])
 
 
 class GraphState(BaseModel):
@@ -92,3 +111,13 @@ class GraphState(BaseModel):
     response_output: dict[str, Any] | None = None
 
     message_title: str | None = None
+
+    # =================================
+    # PROVENANCE & REPAIRS
+    # =================================
+
+    extraction_spans: Annotated[dict[str, dict[str, Any]], _merge_dicts] = {}
+
+    repair_history: Annotated[list[dict[str, Any]], _merge_lists] = []
+
+    fixed_fields: Annotated[list[str], _merge_lists] = []

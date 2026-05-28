@@ -1,130 +1,97 @@
 import json
 import re
+from functools import lru_cache
 
+from cachetools import TTLCache
 from dotenv import load_dotenv
-
 from langchain_groq import ChatGroq
-
-load_dotenv()
+from pydantic import BaseModel, Field
 
 from .GraphState import GraphState
 
 load_dotenv()
 
+# =========================================================
+# REGEX COMPILE
+# =========================================================
 
-# ==========================================
-# LLM
-# ==========================================
-
-llm = ChatGroq(
-    model="llama-3.3-70b-versatile",
-    temperature=0
+PHONE_PATTERN = re.compile(
+    r"(?:\+91[\-\s]?)?[6-9]\d{9}"
 )
 
+MULTISPACE_PATTERN = re.compile(r"\s+")
 
-# ==========================================
-# SINGLE STRUCTURED LLM CALL
-# ==========================================
+# =========================================================
+# CACHE
+# =========================================================
 
-# We'll ask the LLM to output a single JSON object with three keys:
-# - title: short professional title or null
-# - contacts: array of contact person names
-# - numbers: array of phone numbers (10-digit strings)
+metadata_cache = TTLCache(
+    maxsize=10000,
+    ttl=3600
+)
 
-STRUCTURED_INSTRUCTION = '''
-You are an expert Indian real-estate extraction assistant. Given the message below, extract the fields and return ONLY a single valid JSON object (no surrounding text, no markdown):
+# =========================================================
+# STRUCTURED OUTPUT MODEL
+# =========================================================
 
-Fields to return:
-- "title": SHORT professional title (max 12 words) or null. Prefer concise factual wording: BHK, property type, and a main location/token if available (e.g. "2BHK Flat For Rent in Andheri West"). Use "For Sale" for sale messages and "For Rent" for rent messages when request type is known. Do NOT hallucinate missing facts.
-- "contacts": array of FULL PERSON NAMES. Normalize to lowercase, remove honorifics (e.g. "Mr.", "Ms.") and extra tokens, but do not split one person into first/last tokens. Return [] if none.
-- "numbers": array of Indian phone numbers as 10-digit strings (no +91, no spaces/dashes). Remove duplicates. Return [] if none.
+class MetadataResponse(BaseModel):
 
-Robustness rules (important):
-- Return strictly valid JSON only. If unsure, prefer empty arrays or null rather than guessing.
-- Do not invent names, titles, locations, or numbers that are not present in the input.
-- For partial phone numbers or ambiguous tokens, exclude them unless they clearly match an Indian 10-digit pattern.
-- Keep arrays short and precise; only include items clearly present in the text.
+    contacts: list[str] = Field(default_factory=list)
 
-Normalization examples:
-- "Call Rahul at +91-98765 43210" → {"numbers": ["9876543210"], "contacts": ["rahul"]}
-- "Looking for 1 BHK near Kanakya park, contact: Amit" → {"title": "1BHK Flat for Rent near Kanakya park", "contacts": ["amit"]}
-- "No contact provided" → {"title": null, "contacts": [], "numbers": []}
-
-Exact output example:
-{"title": "2BHK Flat for Rent in Andheri West", "contacts": ["rahul"], "numbers": ["9876543210"]}
-'''
+    numbers: list[str] = Field(default_factory=list)
 
 
-def _normalize_request_label(request_type):
-    if request_type == "sale":
-        return "For Sale"
-    if request_type == "rent":
-        return "For Rent"
-    return None
+# =========================================================
+# LLM SINGLETON
+# =========================================================
+
+@lru_cache
+def get_llm():
+
+    llm = ChatGroq(
+        model="llama-3.3-70b-versatile",
+        temperature=0
+    )
+
+    return llm.with_structured_output(MetadataResponse)
 
 
-def _fallback_title(state: GraphState):
-    bhk = state.bhk
-    subtype = state.property_subtype or "flat"
-    location = state.primary_location
-    request_label = _normalize_request_label(state.request_type)
+# =========================================================
+# PROMPT
+# =========================================================
 
-    if bhk is None and not location and request_label is None:
-        return None
+CONTACT_PROMPT = """
+You are an expert Indian real-estate extraction assistant.
 
-    parts = []
-    if isinstance(bhk, int) and bhk > 0:
-        parts.append(f"{bhk}BHK")
+Extract ONLY:
 
-    parts.append(str(subtype).replace("_", " ").title())
+1. contact person names
+2. Indian phone numbers
 
-    if request_label:
-        parts.append(request_label)
+Rules:
+- Return only clearly visible information
+- Do not hallucinate
+- Normalize names to lowercase
+- Remove duplicate numbers
+- Phone numbers must be valid Indian 10 digit numbers
+"""
 
-    if location:
-        parts.append(f"in {str(location).title()}")
+# =========================================================
+# HELPERS
+# =========================================================
 
-    return " ".join(parts).strip() or None
+def normalize_text(text: str):
 
+    text = MULTISPACE_PATTERN.sub(" ", text)
 
-def _enforce_request_type_in_title(title, request_type):
-    if not title:
-        return title
-
-    request_label = _normalize_request_label(request_type)
-    if request_label is None:
-        return title
-
-    if re.search(r"\bfor\s+rent\b|\bfor\s+sale\b", title, re.IGNORECASE):
-        title = re.sub(r"\bfor\s+rent\b|\bfor\s+sale\b", request_label, title, flags=re.IGNORECASE)
-        return title
-
-    return f"{title} {request_label}".strip()
-
-def safe_parse_json_object(content: str) -> dict:
-    try:
-        content = content.strip()
-        content = content.replace("```json", "")
-        content = content.replace("```", "")
-        parsed = json.loads(content)
-        if isinstance(parsed, dict):
-            return parsed
-    except Exception:
-        pass
-    return {}
+    return text.strip()
 
 
-# ==========================================
-# REGEX NUMBER FALLBACK
-# ==========================================
+def regex_extract_numbers(text: str):
 
-def regex_extract_numbers(text):
+    matches = PHONE_PATTERN.findall(text)
 
-    pattern = r"(?:\+91[\-\s]?)?[6-9]\d{9}"
-
-    matches = re.findall(pattern, text)
-
-    cleaned = []
+    cleaned = set()
 
     for number in matches:
 
@@ -134,151 +101,269 @@ def regex_extract_numbers(text):
             number = number[-10:]
 
         if len(number) == 10:
+            cleaned.add(number)
 
-            if number not in cleaned:
-
-                cleaned.append(number)
-
-    return cleaned
+    return list(cleaned)
 
 
-# ==========================================
-# SAFE JSON PARSER
-# ==========================================
+def build_title(state: GraphState):
 
-def safe_json_array(content):
+    bhk = state.bhk
 
-    try:
+    subtype = state.property_subtype or "Flat"
 
-        content = content.strip()
+    location = state.primary_location
 
-        content = content.replace("```json", "")
-        content = content.replace("```", "")
-
-        parsed = json.loads(content)
-
-        if isinstance(parsed, list):
-
-            return parsed
-
-    except (json.JSONDecodeError, TypeError, AttributeError):
-        pass
-
-    return []
-
-
-# ==========================================
-# MAIN NODE
-# ==========================================
-
-def extract_metadata(state: GraphState):
-
-    text = state.cleaned_text or ""
     request_type = state.request_type
 
-    message_title = None
+    parts = []
 
-    contact_people = []
+    if isinstance(bhk, int):
+        parts.append(f"{bhk}BHK")
 
-    contact_numbers = []
+    parts.append(str(subtype).title())
 
-    # ======================================
-    # SINGLE STRUCTURED LLM CALL
-    # ======================================
+    if request_type == "rent":
+        parts.append("For Rent")
 
-    try:
-        prompt = (
-            STRUCTURED_INSTRUCTION
-            + "\n\nRequest Type: "
-            + str(request_type or "unknown")
-            + "\n\nMessage:\n"
-            + text
-        )
-        raw = llm.invoke(prompt)
-    except Exception as e:
-        print("Metadata LLM invocation error:", e)
-        raw = None
+    elif request_type == "sale":
+        parts.append("For Sale")
 
-    if raw is not None:
-        try:
-            raw_content = raw.content if hasattr(raw, "content") else str(raw)
-            parsed = safe_parse_json_object(raw_content)
+    if location:
+        parts.append(f"in {location.title()}")
 
-            if parsed.get("title") is not None:
-                message_title = str(parsed.get("title")).strip() or None
+    title = " ".join(parts).strip()
 
-            contact_people = parsed.get("contacts") or []
+    return title if title else None
 
-            contact_numbers = parsed.get("numbers") or []
 
-        except (json.JSONDecodeError, TypeError, AttributeError) as e:
-            print("Metadata parsing error:", e)
+def clean_contacts(contacts):
 
-    message_title = _enforce_request_type_in_title(message_title, request_type)
+    cleaned = []
 
-    if message_title is None:
-        message_title = _fallback_title(state)
-
-    # ======================================
-    # REGEX FALLBACK FOR NUMBERS
-    # ======================================
-
-    regex_numbers = regex_extract_numbers(text)
-
-    contact_numbers.extend(regex_numbers)
-
-    # ======================================
-    # CLEAN DEDUP
-    # ======================================
-
-    cleaned_contacts = []
-
-    for person in contact_people:
+    for person in contacts:
 
         person = str(person).strip().lower()
 
         if len(person) < 2:
             continue
 
-        if person not in cleaned_contacts:
+        if person not in cleaned:
+            cleaned.append(person)
 
-            cleaned_contacts.append(person)
+    return cleaned
 
-    cleaned_numbers = []
 
-    for number in contact_numbers:
+def clean_numbers(numbers):
+
+    cleaned = set()
+
+    for number in numbers:
 
         number = re.sub(r"\D", "", str(number))
 
+        if number.startswith("91") and len(number) > 10:
+            number = number[-10:]
+
         if len(number) == 10:
+            cleaned.add(number)
 
-            if number not in cleaned_numbers:
+    return list(cleaned)
 
-                cleaned_numbers.append(number)
 
-    # ======================================
-    # METADATA SUMMARY
-    # ======================================
+# =========================================================
+# SPAN TRACING HELPER
+# =========================================================
+
+def record_metadata_spans(state, text, message_title, contact_people, contact_numbers) -> dict:
+    extraction_spans = {}
+    
+    number_spans = []
+    for num in contact_numbers or []:
+        m = re.search(re.escape(str(num)), text)
+        if m:
+            number_spans.append({
+                "value": num,
+                "source_span": m.group(0),
+                "start": m.start(),
+                "end": m.end()
+            })
+    if number_spans:
+        extraction_spans["metadata.contact_numbers"] = {
+            "value": contact_numbers,
+            "source_span": ", ".join(s["source_span"] for s in number_spans),
+            "start": min(s["start"] for s in number_spans),
+            "end": max(s["end"] for s in number_spans),
+            "extractor": "phone_regex_or_llm"
+        }
+        
+    people_spans = []
+    for person in contact_people or []:
+        m = re.search(rf"\b{re.escape(str(person))}\b", text.lower())
+        if m:
+            people_spans.append({
+                "value": person,
+                "source_span": m.group(0),
+                "start": m.start(),
+                "end": m.end()
+            })
+    if people_spans:
+        extraction_spans["metadata.contact_people"] = {
+            "value": contact_people,
+            "source_span": ", ".join(s["source_span"] for s in people_spans),
+            "start": min(s["start"] for s in people_spans),
+            "end": max(s["end"] for s in people_spans),
+            "extractor": "contact_name_llm"
+        }
+        
+    if message_title:
+        comp_starts = []
+        comp_ends = []
+        prev_spans = state.extraction_spans or {}
+        for key in ["summary.bhk", "property.property_subtype", "location.primary_location"]:
+            if key in prev_spans:
+                comp_starts.append(prev_spans[key]["start"])
+                comp_ends.append(prev_spans[key]["end"])
+        if comp_starts and comp_ends:
+            start = min(comp_starts)
+            end = max(comp_ends)
+            extraction_spans["metadata.message_title"] = {
+                "value": message_title,
+                "source_span": text[start:end],
+                "start": start,
+                "end": end,
+                "extractor": "title_rule_generator"
+            }
+        else:
+            extraction_spans["metadata.message_title"] = {
+                "value": message_title,
+                "source_span": text[:30],
+                "start": 0,
+                "end": min(30, len(text)),
+                "extractor": "title_rule_generator"
+            }
+            
+    return extraction_spans
+
+
+# =========================================================
+# MAIN NODE
+# =========================================================
+
+def extract_metadata(state: GraphState):
+
+
+
+    text = state.cleaned_text or ""
+
+    if not text:
+        return {
+            "extraction_spans": {}
+        }
+
+    text = normalize_text(text)
+
+    # =====================================================
+    # CACHE CHECK
+    # =====================================================
+
+    cache_key = hash(text)
+
+    if cache_key in metadata_cache:
+
+        cached = metadata_cache[cache_key]
+
+        message_title = cached["message_title"]
+
+        contact_people = cached["contact_people"]
+
+        contact_numbers = cached["contact_numbers"]
+
+        metadata_summary = cached["metadata_summary"]
+
+        extraction_spans = record_metadata_spans(state, text, message_title, contact_people, contact_numbers)
+        return {
+            "message_title": message_title,
+            "contact_people": contact_people,
+            "contact_numbers": contact_numbers,
+            "metadata_summary": metadata_summary,
+            "extraction_spans": extraction_spans
+        }
+
+    # =====================================================
+    # REGEX FIRST
+    # =====================================================
+
+    regex_numbers = regex_extract_numbers(text)
+
+    contact_people = []
+
+    contact_numbers = regex_numbers.copy()
+
+    # =====================================================
+    # ONLY CALL LLM IF NEEDED
+    # =====================================================
+
+    needs_llm = len(contact_numbers) == 0
+
+    if needs_llm:
+
+        try:
+
+            llm = get_llm()
+
+            response = llm.invoke(
+                CONTACT_PROMPT + "\n\nMESSAGE:\n" + text
+            )
+
+            if response:
+
+                contact_people = response.contacts or []
+
+                contact_numbers.extend(
+                    response.numbers or []
+                )
+
+        except Exception as e:
+
+            print("Metadata LLM Error:", e)
+
+    # =====================================================
+    # CLEANING
+    # =====================================================
+
+    contact_people = clean_contacts(contact_people)
+
+    contact_numbers = clean_numbers(contact_numbers)
+
+    # =====================================================
+    # TITLE GENERATION
+    # =====================================================
+
+    message_title = build_title(state)
+
+    # =====================================================
+    # SUMMARY
+    # =====================================================
 
     metadata_summary = {
 
         "has_contact": (
-            len(cleaned_numbers) > 0
-            or len(cleaned_contacts) > 0
+            len(contact_people) > 0
+            or len(contact_numbers) > 0
         ),
 
-        "total_numbers": len(cleaned_numbers),
+        "total_contacts": len(contact_people),
 
-        "total_contacts": len(cleaned_contacts)
+        "total_numbers": len(contact_numbers)
     }
 
+    extraction_spans = record_metadata_spans(state, text, message_title, contact_people, contact_numbers)
+
     return {
-
         "message_title": message_title,
-
-        "contact_people": cleaned_contacts,
-
-        "contact_numbers": cleaned_numbers,
-
-        "metadata_summary": metadata_summary
+        "contact_people": contact_people,
+        "contact_numbers": contact_numbers,
+        "metadata_summary": metadata_summary,
+        "extraction_spans": extraction_spans
     }

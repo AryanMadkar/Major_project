@@ -50,6 +50,8 @@ UNFURNISHED = [
 
 def extract_furnishing(state: GraphState):
 
+
+
     text = (state.cleaned_text or "").lower()
 
     scores = {
@@ -74,9 +76,38 @@ def extract_furnishing(state: GraphState):
         scores["semi_furnished"] += 2
 
     furnishing = max(scores, key=scores.get)
+    matched_word = None
+    start = -1
+    end = -1
+
     if scores[furnishing] <= 0:
         furnishing = None
+    else:
+        # Trace span of match
+        if furnishing == "fully_furnished":
+            kws = FULLY_FURNISHED
+        elif furnishing == "semi_furnished":
+            kws = SEMI_FURNISHED + ["ac", "sofa", "bed", "fridge", "washing machine"]
+        else:
+            kws = UNFURNISHED
+            
+        for word in kws:
+            m = re.search(rf"\b{re.escape(word)}\b", text)
+            if m:
+                matched_word = m.group(0)
+                start = m.start()
+                end = m.end()
+                break
 
     return {
-        "furnishing": furnishing
+        "furnishing": furnishing,
+        "extraction_spans": {
+            "attributes.furnishing": {
+                "value": furnishing,
+                "source_span": matched_word,
+                "start": start,
+                "end": end,
+                "extractor": "furnishing_keyword_scorer"
+            }
+        } if matched_word else {}
     }

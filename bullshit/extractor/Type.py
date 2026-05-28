@@ -6,6 +6,8 @@ from .GraphState import GraphState
 # =========================
 def extract_type(state: GraphState):
 
+
+
     text = (state.cleaned_text or "").lower()
 
     # =========================
@@ -107,6 +109,75 @@ def extract_type(state: GraphState):
     if detected_price_type == "sale" and request_type == "unknown":
         request_type = "sale"
 
+    # =========================
+    # RECORD SPANS
+    # =========================
+    extraction_spans = dict(state.extraction_spans or {})
+    matched_word = None
+    start = -1
+    end = -1
+    
+    if request_type == "requirement":
+        for word in requirement_keywords:
+            m = re.search(rf"\b{re.escape(word)}\b", text)
+            if m:
+                matched_word = m.group(0)
+                start = m.start()
+                end = m.end()
+                break
+        if not matched_word:
+            m = re.search(r"\b(required|wanted|looking for|requirement)\b", text)
+            if m:
+                matched_word = m.group(0)
+                start = m.start()
+                end = m.end()
+        if not matched_word:
+            m = re.search(r"\bneed\b", text)
+            if m:
+                matched_word = m.group(0)
+                start = m.start()
+                end = m.end()
+    elif request_type == "rent":
+        for word in rent_keywords:
+            m = re.search(rf"\b{re.escape(word)}\b", text)
+            if m:
+                matched_word = m.group(0)
+                start = m.start()
+                end = m.end()
+                break
+    elif request_type == "sale":
+        for word in sales_keywords:
+            m = re.search(rf"\b{re.escape(word)}\b", text)
+            if m:
+                matched_word = m.group(0)
+                start = m.start()
+                end = m.end()
+                break
+        if not matched_word:
+            m = re.search(r"\b(cr|crore|crores|lakh|lac|asking|quote|quoted|out rate|outright)\b", text)
+            if m:
+                matched_word = m.group(0)
+                start = m.start()
+                end = m.end()
+                
+    if matched_word:
+        extraction_spans["summary.request_type"] = {
+            "value": request_type,
+            "source_span": matched_word,
+            "start": start,
+            "end": end,
+            "extractor": "type_keyword_regex"
+        }
+
     return {
-        "request_type": request_type
+        "request_type": request_type,
+        "extraction_spans": {
+            "summary.request_type": {
+                "value": request_type,
+                "source_span": matched_word,
+                "start": start,
+                "end": end,
+                "extractor": "type_keyword_regex"
+            }
+        } if matched_word else {}
     }

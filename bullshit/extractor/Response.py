@@ -1,5 +1,66 @@
+from typing import Any, List, Dict, Optional
+from pydantic import BaseModel, Field
 from .GraphState import GraphState
 
+
+# ==========================================
+# PYDANTIC OUTPUT SCHEMAS
+# ==========================================
+
+class SummarySchema(BaseModel):
+    request_type: Optional[str] = None
+    bhk: Optional[int] = None
+
+class PricingSchema(BaseModel):
+    price: Optional[int] = None
+    price_display: Optional[str] = None
+    price_min: Optional[int] = None
+    price_max: Optional[int] = None
+    price_min_display: Optional[str] = None
+    price_max_display: Optional[str] = None
+    rent_price: Optional[int] = None
+    rent_price_display: Optional[str] = None
+    deposit_price: Optional[int] = None
+    deposit_price_display: Optional[str] = None
+
+class LocationSchema(BaseModel):
+    primary_location: Optional[str] = None
+    railway_line: Optional[str] = None
+    locations: Optional[List[str]] = None
+
+class AttributesSchema(BaseModel):
+    furnishing: Optional[str] = None
+    facing: Optional[str] = None
+
+class ParkingSchema(BaseModel):
+    parking_count: Optional[int] = None
+    parking_type: Optional[str] = None
+
+class PropertySchema(BaseModel):
+    property_subtype: Optional[str] = None
+    all_detected_subtypes: Optional[List[str]] = None
+
+class MetadataSchema(BaseModel):
+    message_title: Optional[str] = None
+    contact_people: Optional[List[str]] = None
+    contact_numbers: Optional[List[str]] = None
+    metadata_summary: Optional[Dict[str, Any]] = None
+
+class FinalOutput(BaseModel):
+    summary: SummarySchema
+    pricing: PricingSchema
+    location: LocationSchema
+    attributes: AttributesSchema
+    parking: ParkingSchema
+    amenities: Optional[List[str]] = None
+    property: PropertySchema
+    metadata: MetadataSchema
+    extraction_meta: Optional[Dict[str, Any]] = None
+
+
+# ==========================================
+# HELPERS
+# ==========================================
 
 def _format_inr(value):
     if value is None:
@@ -16,23 +77,40 @@ def _as_int(value):
         return None
 
 
-def _meta(value, source, confidence):
-    if value in (None, [], {}):
-        return {
-            "value": value,
-            "source": source,
-            "confidence": 0,
-        }
-    return {
+def build_traceable_meta(field_name: str, default_source: str, default_confidence: float, value: Any, state: GraphState) -> Dict[str, Any]:
+    """Builds a traceable metadata record for a field using spans and repair history."""
+    meta = {
         "value": value,
-        "source": source,
-        "confidence": confidence,
+        "source": default_source,
+        "confidence": default_confidence if value not in (None, [], {}) else 0,
+        "source_span": None,
+        "start": None,
+        "end": None,
+        "extractor": None,
+        "repair_history": []
     }
+    
+    # Retrieve span details
+    spans = state.extraction_spans or {}
+    if field_name in spans:
+        span_info = spans[field_name]
+        meta["source_span"] = span_info.get("source_span")
+        meta["start"] = span_info.get("start")
+        meta["end"] = span_info.get("end")
+        meta["extractor"] = span_info.get("extractor")
+        
+    # Retrieve repair history
+    history = state.repair_history or []
+    field_history = [item for item in history if item.get("field") == field_name]
+    meta["repair_history"] = field_history
+    
+    return meta
 
 
-# =========================
+# ==========================================
 # RESPONSE NODE
-# =========================
+# ==========================================
+
 def response_node(state: GraphState):
 
     output = {
@@ -77,27 +155,35 @@ def response_node(state: GraphState):
             "metadata_summary": state.metadata_summary,
         },
         "extraction_meta": {
-            "summary.request_type": _meta(state.request_type, "keyword+rules", 90),
-            "summary.bhk": _meta(state.bhk, "regex", 90),
-            "pricing.price": _meta(_as_int(state.price), "regex+rules", 85),
-            "pricing.price_min": _meta(_as_int(state.price_min), "regex+rules", 85),
-            "pricing.price_max": _meta(_as_int(state.price_max), "regex+rules", 85),
-            "pricing.rent_price": _meta(_as_int(state.rent_price), "regex+rules", 90),
-            "pricing.deposit_price": _meta(_as_int(state.deposit_price), "regex+rules", 90),
-            "location.primary_location": _meta(state.primary_location, "dictionary+patterns", 80),
-            "location.locations": _meta(state.locations, "dictionary+patterns", 80),
-            "location.railway_line": _meta(state.railway_line, "dictionary", 85),
-            "attributes.furnishing": _meta(state.furnishing, "keyword+scoring", 80),
-            "attributes.facing": _meta(state.facing, "keyword", 85),
-            "parking.parking_count": _meta(state.parking_count, "regex", 80),
-            "parking.parking_type": _meta(state.parking_type, "keyword", 80),
-            "amenities": _meta(state.amenities, "regex+llm", 75),
-            "property.property_subtype": _meta(state.property_subtype, "keyword+llm", 80),
-            "property.all_detected_subtypes": _meta(state.all_detected_subtypes, "keyword+llm", 75),
-            "metadata.message_title": _meta(state.message_title, "llm+rules", 75),
-            "metadata.contact_people": _meta(state.contact_people, "llm+cleanup", 85),
-            "metadata.contact_numbers": _meta(state.contact_numbers, "regex+llm", 95),
+            "summary.request_type": build_traceable_meta("summary.request_type", "keyword+rules", 90, state.request_type, state),
+            "summary.bhk": build_traceable_meta("summary.bhk", "regex", 90, state.bhk, state),
+            "pricing.price": build_traceable_meta("pricing.price", "regex+rules", 85, _as_int(state.price), state),
+            "pricing.price_min": build_traceable_meta("pricing.price_min", "regex+rules", 85, _as_int(state.price_min), state),
+            "pricing.price_max": build_traceable_meta("pricing.price_max", "regex+rules", 85, _as_int(state.price_max), state),
+            "pricing.rent_price": build_traceable_meta("pricing.rent_price", "regex+rules", 90, _as_int(state.rent_price), state),
+            "pricing.deposit_price": build_traceable_meta("pricing.deposit_price", "regex+rules", 90, _as_int(state.deposit_price), state),
+            "location.primary_location": build_traceable_meta("location.primary_location", "dictionary+patterns", 80, state.primary_location, state),
+            "location.locations": build_traceable_meta("location.locations", "dictionary+patterns", 80, state.locations, state),
+            "location.railway_line": build_traceable_meta("location.railway_line", "dictionary", 85, state.railway_line, state),
+            "attributes.furnishing": build_traceable_meta("attributes.furnishing", "keyword+scoring", 80, state.furnishing, state),
+            "attributes.facing": build_traceable_meta("attributes.facing", "keyword", 85, state.facing, state),
+            "parking.parking_count": build_traceable_meta("parking.parking_count", "regex", 80, state.parking_count, state),
+            "parking.parking_type": build_traceable_meta("parking.parking_type", "keyword", 80, state.parking_type, state),
+            "amenities": build_traceable_meta("amenities", "regex+llm", 75, state.amenities, state),
+            "property.property_subtype": build_traceable_meta("property.property_subtype", "keyword+llm", 80, state.property_subtype, state),
+            "property.all_detected_subtypes": build_traceable_meta("property.all_detected_subtypes", "keyword+llm", 75, state.all_detected_subtypes, state),
+            "metadata.message_title": build_traceable_meta("metadata.message_title", "llm+rules", 75, state.message_title, state),
+            "metadata.contact_people": build_traceable_meta("metadata.contact_people", "llm+cleanup", 85, state.contact_people, state),
+            "metadata.contact_numbers": build_traceable_meta("metadata.contact_numbers", "regex+llm", 95, state.contact_numbers, state),
         },
     }
+
+
+
+    # Enforce Pydantic Schema Validation
+    try:
+        FinalOutput.model_validate(output)
+    except Exception as e:
+        print("Schema Validation Error:", e)
 
     return {"response_output": output}

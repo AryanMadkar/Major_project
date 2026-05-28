@@ -2,81 +2,123 @@ import re
 from .GraphState import GraphState
 
 
-# ==========================================
+# =========================================================
+# PRECOMPILED REGEX
+# =========================================================
+
+PARKING_COUNT_PATTERN = re.compile(
+    r"""
+    (?:
+        (\d+)\s*
+        (?:
+            car\s*parking|
+            covered\s*parking|
+            open\s*parking|
+            parking
+        )
+    )
+    |
+    (?:
+        parking\s*for\s*(\d+)
+    )
+    """,
+    re.IGNORECASE | re.VERBOSE
+)
+
+
+PARKING_TYPE_PATTERNS = {
+
+    "covered": re.compile(r"\bcovered parking\b", re.IGNORECASE),
+
+    "open": re.compile(r"\bopen parking\b", re.IGNORECASE),
+
+    "stilt": re.compile(r"\bstilt parking\b", re.IGNORECASE),
+
+    "car": re.compile(r"\bcar parking\b", re.IGNORECASE),
+}
+
+
+GENERIC_PARKING_PATTERN = re.compile(
+    r"\bparking\b",
+    re.IGNORECASE
+)
+
+
+# =========================================================
 # MAIN EXTRACTOR
-# ==========================================
+# =========================================================
 
 def extract_parking(state: GraphState):
+
+
 
     text = state.cleaned_text or ""
 
     if not text:
-        return {"parking_count": None, "parking_type": None}
+        return {
+            "parking_count": None,
+            "parking_type": None,
+        }
 
     parking_count = None
-
     parking_type = None
+    extraction_spans = {}
 
-    # ======================================
-    # NUMBER + PARKING
-    # ======================================
+    # =====================================================
+    # COUNT EXTRACTION
+    # =====================================================
 
-    patterns = [
+    match = PARKING_COUNT_PATTERN.search(text)
 
-        r"(\d+)\s*car parking",
+    if match:
+        count = match.group(1) or match.group(2)
+        try:
+            parking_count = int(count)
+            extraction_spans["parking.parking_count"] = {
+                "value": parking_count,
+                "source_span": match.group(0),
+                "start": match.start(),
+                "end": match.end(),
+                "extractor": "parking_count_regex"
+            }
+        except Exception:
+            parking_count = None
 
-        r"(\d+)\s*parking",
+    # =====================================================
+    # TYPE EXTRACTION
+    # =====================================================
 
-        r"(\d+)\s*covered parking",
-
-        r"(\d+)\s*open parking",
-
-        r"parking for (\d+)"
-    ]
-
-    for pattern in patterns:
-
-        match = re.search(pattern, text)
-
-        if match:
-
-            parking_count = int(match.group(1))
-
+    for p_type, pattern in PARKING_TYPE_PATTERNS.items():
+        type_match = pattern.search(text)
+        if type_match:
+            parking_type = p_type
+            extraction_spans["parking.parking_type"] = {
+                "value": parking_type,
+                "source_span": type_match.group(0),
+                "start": type_match.start(),
+                "end": type_match.end(),
+                "extractor": "parking_type_regex"
+            }
             break
 
-    # ======================================
-    # COVERED
-    # ======================================
-
-    if re.search(r"covered parking", text):
-
-        parking_type = "covered"
-
-    elif re.search(r"open parking", text):
-
-        parking_type = "open"
-
-    elif re.search(r"stilt parking", text):
-
-        parking_type = "stilt"
-
-    elif re.search(r"car parking", text):
-
-        parking_type = "car"
-
-    # ======================================
+    # =====================================================
     # FALLBACK
-    # ======================================
+    # =====================================================
 
     if parking_count is None:
-
-        if re.search(r"\bparking\b", text):
-
+        fallback_match = GENERIC_PARKING_PATTERN.search(text)
+        if fallback_match:
             parking_count = 1
+            extraction_spans["parking.parking_count"] = {
+                "value": parking_count,
+                "source_span": fallback_match.group(0),
+                "start": fallback_match.start(),
+                "end": fallback_match.end(),
+                "extractor": "parking_generic_fallback"
+            }
 
     return {
-
         "parking_count": parking_count,
-
-        "parking_type": parking_type
+        "parking_type": parking_type,
+        "extraction_spans": extraction_spans
     }

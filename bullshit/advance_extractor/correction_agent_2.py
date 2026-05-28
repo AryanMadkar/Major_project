@@ -1,347 +1,217 @@
 import json
 import copy
-
+from typing import Any, Dict
 from dotenv import load_dotenv
-
 from langchain_groq import ChatGroq
-
 from extractor.GraphState import GraphState
 
 load_dotenv()
 
-# ==========================================
-# REPAIR MODEL
-# ==========================================
-
 repair_llm = ChatGroq(
     model="llama-3.3-70b-versatile",
-    temperature=0.2
+    temperature=0.0
 )
 
-# ==========================================
-# PROMPT
-# ==========================================
-
 CORRECTION_PROMPT = """
-You are an elite semantic real-estate extraction repair AI.
+You are an expert real-estate extraction repair assistant.
+Your task is to correct ONLY the following fields that failed validation:
+{failed_fields_list}
 
-Your ONLY responsibility:
-Repair semantic and interpretation-based fields.
+Rules:
+- Use ONLY information explicitly supported by the original message.
+- If a field cannot be corrected using explicit information, set it to null or empty list/value.
+- Do NOT modify any other fields.
+- Return ONLY valid JSON containing the corrected fields.
 
-You are STRICTLY ALLOWED to modify ONLY:
-
-- amenities
-- furnishing
-- facing
-- metadata
-- contact details
-- message title
-
-You MUST NOT modify:
-- bhk
-- pricing
-- request type
-- locations
-- parking
-- property subtype
-
-You will receive:
-1. Original message
-2. Current extracted JSON
-3. Validation report
-
-Your job:
-- repair semantic extraction mistakes
-- repair hallucinated amenities
-- repair furnishing mistakes
-- repair facing direction mistakes
-- repair metadata extraction
-- repair contact extraction
-- repair title generation
-- improve semantic normalization
-
-VERY IMPORTANT RULES:
-- Never hallucinate unsupported amenities.
-- Never invent contact details.
-- Only extract explicit information.
-- Preserve already-correct fields.
-- Modify ONLY incorrect fields.
-- Be conservative.
-- Never remove valid information.
-
-Return ONLY VALID JSON.
-
-OUTPUT FORMAT:
-
-{{
-    "attributes": {{}},
-    "amenities": [],
-    "metadata": {{}}
-}}
-
-ORIGINAL MESSAGE:
+Original Message:
 {original_message}
 
-CURRENT EXTRACTION:
-{current_output}
+Current Incorrect Extraction Values:
+{current_values}
 
-VALIDATION REPORT:
-{validation_report}
+Example Output Format:
+{{
+    "failed_field_name_1": "corrected_value_1",
+    "failed_field_name_2": null
+}}
 """
 
-# ==========================================
-# SAFE JSON PARSER
-# ==========================================
-
 def safe_parse_json(content):
-
     try:
-
         content = content.strip()
-
         content = content.replace("```json", "")
         content = content.replace("```", "")
-
         parsed = json.loads(content)
-
         if isinstance(parsed, dict):
-
             return parsed
-
     except (json.JSONDecodeError, TypeError, AttributeError):
         pass
-
     return None
 
 
-# ==========================================
-# FILTER REPAIRS
-# ==========================================
-
-def filter_allowed_repairs(repaired_output):
-
-    safe_output = {
-
-        "attributes": {},
-
-        "amenities": [],
-
-        "metadata": {}
+def get_field_val(field_name: str, state: GraphState):
+    mapping = {
+        "summary.request_type": state.request_type,
+        "summary.bhk": state.bhk,
+        "pricing.price": state.price,
+        "pricing.price_min": state.price_min,
+        "pricing.price_max": state.price_max,
+        "pricing.rent_price": state.rent_price,
+        "pricing.deposit_price": state.deposit_price,
+        "location.primary_location": state.primary_location,
+        "location.locations": state.locations,
+        "location.railway_line": state.railway_line,
+        "attributes.furnishing": state.furnishing,
+        "attributes.facing": state.facing,
+        "parking.parking_count": state.parking_count,
+        "parking.parking_type": state.parking_type,
+        "amenities": state.amenities,
+        "property.property_subtype": state.property_subtype,
+        "property.all_detected_subtypes": state.all_detected_subtypes,
+        "metadata.message_title": state.message_title,
+        "metadata.contact_people": state.contact_people,
+        "metadata.contact_numbers": state.contact_numbers,
     }
-
-    # ======================================
-    # ATTRIBUTES
-    # ======================================
-
-    attributes = repaired_output.get(
-        "attributes",
-        {}
-    )
-
-    for key in [
-
-        "furnishing",
-        "facing"
-    ]:
-
-        if key in attributes:
-
-            safe_output["attributes"][key] = (
-                attributes[key]
-            )
-
-    # ======================================
-    # AMENITIES
-    # ======================================
-
-    amenities = repaired_output.get(
-        "amenities",
-        []
-    )
-
-    if isinstance(amenities, list):
-
-        cleaned = []
-
-        for item in amenities:
-
-            item = str(item).strip().lower()
-
-            if not item:
-                continue
-
-            if item not in cleaned:
-
-                cleaned.append(item)
-
-        safe_output["amenities"] = cleaned
-
-    # ======================================
-    # METADATA
-    # ======================================
-
-    metadata = repaired_output.get(
-        "metadata",
-        {}
-    )
-
-    allowed_metadata = [
-
-        "message_title",
-
-        "contact_people",
-
-        "contact_numbers",
-
-        "metadata_summary"
-    ]
-
-    for key in allowed_metadata:
-
-        if key in metadata:
-
-            safe_output["metadata"][key] = (
-                metadata[key]
-            )
-
-    return safe_output
+    return mapping.get(field_name)
 
 
-# ==========================================
-# MERGE OUTPUTS
-# ==========================================
+def update_field_in_state_and_output(field_name: str, new_val: Any, state: GraphState, response_output: dict, repair_history: list):
+    old_val = get_field_val(field_name, state)
+    
+    if field_name == "summary.request_type":
+        state.request_type = new_val
+        response_output["summary"]["request_type"] = new_val
+    elif field_name == "summary.bhk":
+        state.bhk = new_val
+        response_output["summary"]["bhk"] = new_val
+    elif field_name == "pricing.price":
+        state.price = new_val
+        response_output["pricing"]["price"] = new_val
+    elif field_name == "pricing.price_min":
+        state.price_min = new_val
+        response_output["pricing"]["price_min"] = new_val
+    elif field_name == "pricing.price_max":
+        state.price_max = new_val
+        response_output["pricing"]["price_max"] = new_val
+    elif field_name == "pricing.rent_price":
+        state.rent_price = new_val
+        response_output["pricing"]["rent_price"] = new_val
+    elif field_name == "pricing.deposit_price":
+        state.deposit_price = new_val
+        response_output["pricing"]["deposit_price"] = new_val
+    elif field_name == "location.primary_location":
+        state.primary_location = new_val
+        response_output["location"]["primary_location"] = new_val
+    elif field_name == "location.locations":
+        state.locations = new_val
+        response_output["location"]["locations"] = new_val
+    elif field_name == "location.railway_line":
+        state.railway_line = new_val
+        response_output["location"]["railway_line"] = new_val
+    elif field_name == "attributes.furnishing":
+        state.furnishing = new_val
+        response_output["attributes"]["furnishing"] = new_val
+    elif field_name == "attributes.facing":
+        state.facing = new_val
+        response_output["attributes"]["facing"] = new_val
+    elif field_name == "parking.parking_count":
+        state.parking_count = new_val
+        response_output["parking"]["parking_count"] = new_val
+    elif field_name == "parking.parking_type":
+        state.parking_type = new_val
+        response_output["parking"]["parking_type"] = new_val
+    elif field_name == "amenities":
+        state.amenities = new_val
+        response_output["amenities"] = new_val
+    elif field_name == "property.property_subtype":
+        state.property_subtype = new_val
+        response_output["property"]["property_subtype"] = new_val
+    elif field_name == "property.all_detected_subtypes":
+        state.all_detected_subtypes = new_val
+        response_output["property"]["all_detected_subtypes"] = new_val
+    elif field_name == "metadata.message_title":
+        state.message_title = new_val
+        response_output["metadata"]["message_title"] = new_val
+    elif field_name == "metadata.contact_people":
+        state.contact_people = new_val
+        response_output["metadata"]["contact_people"] = new_val
+    elif field_name == "metadata.contact_numbers":
+        state.contact_numbers = new_val
+        response_output["metadata"]["contact_numbers"] = new_val
 
-def merge_outputs(original, repaired):
+    if old_val != new_val:
+        repair_history.append({
+            "field": field_name,
+            "old_value": old_val,
+            "new_value": new_val,
+            "reason": "Corrected by Targeted Semantic LLM Repair Agent"
+        })
 
-    merged = copy.deepcopy(original)
-
-    # ======================================
-    # ATTRIBUTES
-    # ======================================
-
-    if "attributes" in repaired:
-
-        if "attributes" not in merged:
-
-            merged["attributes"] = {}
-
-        for key, value in repaired[
-            "attributes"
-        ].items():
-
-            merged["attributes"][key] = value
-
-    # ======================================
-    # AMENITIES
-    # ======================================
-
-    if "amenities" in repaired:
-
-        merged["amenities"] = repaired[
-            "amenities"
-        ]
-
-    # ======================================
-    # METADATA
-    # ======================================
-
-    if "metadata" in repaired:
-
-        if "metadata" not in merged:
-
-            merged["metadata"] = {}
-
-        for key, value in repaired[
-            "metadata"
-        ].items():
-
-            merged["metadata"][key] = value
-
-    return merged
-
-
-# ==========================================
-# MAIN NODE
-# ==========================================
 
 def correction_agent_2(state: GraphState):
+    """
+    Targeted Semantic Repair Agent. Calls LLM only for failed semantic fields.
+    If no semantic fields failed, immediately bypasses the LLM call.
+    """
+
 
     original_message = state.user_input or ""
-
-    current_output = state.response_output or {}
-
     validation_report = state.validation_report or {}
+    field_analysis = validation_report.get("field_analysis", {})
+    repair_history = list(state.repair_history or [])
+    response_output = copy.deepcopy(state.response_output or {})
 
-    # ======================================
-    # BUILD PROMPT
-    # ======================================
+    # Identify failed semantic fields
+    semantic_fields = {
+        "location.primary_location", "location.locations", "location.railway_line",
+        "attributes.furnishing", "attributes.facing", "amenities",
+        "property.property_subtype", "property.all_detected_subtypes",
+        "metadata.message_title", "metadata.contact_people", "metadata.contact_numbers"
+    }
 
-    prompt = CORRECTION_PROMPT.format(
+    failed_semantic_fields = []
+    current_values = {}
 
-        original_message=original_message,
+    for field, report in field_analysis.items():
+        if field in semantic_fields and not report.get("valid", True):
+            failed_semantic_fields.append(field)
+            current_values[field] = get_field_val(field, state)
 
-        current_output=json.dumps(
-            current_output,
-            indent=2,
-            ensure_ascii=False
-        ),
+    if not failed_semantic_fields:
+        return {}
 
-        validation_report=json.dumps(
-            validation_report,
-            indent=2,
-            ensure_ascii=False
-        )
-    )
-
-    # ======================================
-    # LLM REPAIR
-    # ======================================
-
+    # 2. RUN TARGETED LLM REPAIR
     try:
+        prompt = CORRECTION_PROMPT.format(
+            failed_fields_list=json.dumps(failed_semantic_fields, indent=2),
+            original_message=original_message,
+            current_values=json.dumps(current_values, indent=2, ensure_ascii=False)
+        )
 
         response = repair_llm.invoke(prompt)
+        raw_content = response.content if hasattr(response, "content") else str(response)
+        repaired_json = safe_parse_json(raw_content)
 
-        raw_content = (
-            response.content
-            if hasattr(response, "content")
-            else str(response)
-        )
-
-        repaired_json = safe_parse_json(
-            raw_content
-        )
-
-        if repaired_json is None:
-
-            return {}
-
-        # ==================================
-        # SECURITY FILTER
-        # ==================================
-
-        repaired_json = filter_allowed_repairs(
-            repaired_json
-        )
-
-        # ==================================
-        # MERGE
-        # ==================================
-
-        merged_output = merge_outputs(
-            current_output,
-            repaired_json
-        )
-
-        return {
-
-            "response_output": merged_output
-        }
+        if repaired_json:
+            for field, new_val in repaired_json.items():
+                if field in failed_semantic_fields:
+                    update_field_in_state_and_output(field, new_val, state, response_output, repair_history)
 
     except Exception as e:
+        print("Correction Agent 2 Targeted LLM Error:", e)
 
-        print(
-            "Correction Agent 2 Error:",
-            e
-        )
-
-        return {}
+    return {
+        "primary_location": state.primary_location,
+        "locations": state.locations,
+        "railway_line": state.railway_line,
+        "furnishing": state.furnishing,
+        "facing": state.facing,
+        "amenities": state.amenities,
+        "property_subtype": state.property_subtype,
+        "all_detected_subtypes": state.all_detected_subtypes,
+        "message_title": state.message_title,
+        "contact_people": state.contact_people,
+        "contact_numbers": state.contact_numbers,
+        "repair_history": repair_history,
+        "response_output": response_output,
+    }

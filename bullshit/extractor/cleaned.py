@@ -1,7 +1,6 @@
 import re
 import emoji
 import unicodedata
-
 from .GraphState import GraphState
 
 
@@ -23,11 +22,13 @@ MULTISPACE_PATTERN = re.compile(r"\s+")
 
 def clean_text_node(state: GraphState):
 
+
+    
     text = state.user_input or ""
 
     if not text:
         return {
-            "cleaned_text": ""
+            "cleaned_text": "",
         }
 
     # =====================================
@@ -61,5 +62,5 @@ def clean_text_node(state: GraphState):
     text = MULTISPACE_PATTERN.sub(" ", text).strip()
 
     return {
-        "cleaned_text": text
+        "cleaned_text": text,
     }

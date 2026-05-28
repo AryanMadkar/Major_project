@@ -58,8 +58,6 @@ def extract():
     else:
         result = graph.invoke({
             "user_input": user_input,
-            "iteration_count": 0,
-            "verification_history": [],
         })
         cache_set(cache_key, result)
 

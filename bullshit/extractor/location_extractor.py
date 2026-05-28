@@ -168,6 +168,8 @@ def _append_pattern_spans(patterns, text):
 
 def extract_location(state: GraphState):
 
+
+
     text = (state.cleaned_text or "").lower()
 
     all_spans = []
@@ -184,7 +186,9 @@ def extract_location(state: GraphState):
 
     detected_locations = []
     railway_line = None
+    railway_line_span = None
     seen = set()
+    primary_span_obj = None
 
     for span in all_spans:
         value = span["value"]
@@ -192,21 +196,54 @@ def extract_location(state: GraphState):
             continue
         seen.add(value)
         detected_locations.append(value)
+        if primary_span_obj is None:
+            primary_span_obj = span
 
         if railway_line is None and span.get("label") in {"western", "central", "harbour"}:
             railway_line = span.get("label")
+            railway_line_span = span
 
     primary_location = detected_locations[0] if detected_locations else None
+
+    # ======================================
+    # RECORD SPANS
+    # ======================================
+    extraction_spans = {}
+    if primary_location and primary_span_obj:
+        start = primary_span_obj["start"]
+        end = start + len(primary_location)
+        extraction_spans["location.primary_location"] = {
+            "value": primary_location,
+            "source_span": text[start:end],
+            "start": start,
+            "end": end,
+            "extractor": "location_dictionary"
+        }
+        extraction_spans["location.locations"] = {
+            "value": detected_locations,
+            "source_span": text[start:end],
+            "start": start,
+            "end": end,
+            "extractor": "location_dictionary"
+        }
+    if railway_line and railway_line_span:
+        start = railway_line_span["start"]
+        end = start + len(railway_line_span["value"])
+        extraction_spans["location.railway_line"] = {
+            "value": railway_line,
+            "source_span": text[start:end],
+            "start": start,
+            "end": end,
+            "extractor": "location_railway_dict"
+        }
 
     # ======================================
     # RETURN
     # ======================================
 
     return {
-
         "locations": detected_locations,
-
         "primary_location": primary_location,
-
-        "railway_line": railway_line
+        "railway_line": railway_line,
+        "extraction_spans": extraction_spans
     }

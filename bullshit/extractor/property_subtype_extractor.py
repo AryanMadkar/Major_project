@@ -1,5 +1,4 @@
 import re
-
 from .GraphState import GraphState
 
 
@@ -186,6 +185,8 @@ PRIORITY = [
 
 def extract_property_subtype(state: GraphState):
 
+
+
     text = state.cleaned_text or ""
 
     detected = []
@@ -234,15 +235,49 @@ def extract_property_subtype(state: GraphState):
     # ======================================
 
     if final_subtype is None:
-
         # BHK usually apartment
         if re.search(r"\bbhk\b", text):
-
             final_subtype = "apartment"
 
+    # ======================================
+    # RECORD SPANS
+    # ======================================
+    extraction_spans = {}
+    if final_subtype:
+        matched_word = None
+        start = -1
+        end = -1
+        for keyword in PROPERTY_SUBTYPE_MAP.get(final_subtype, []):
+            m = re.search(rf"\b{re.escape(keyword)}\b", text)
+            if m:
+                matched_word = m.group(0)
+                start = m.start()
+                end = m.end()
+                break
+        if not matched_word and final_subtype == "apartment" and "bhk" in text:
+            m = re.search(r"\bbhk\b", text)
+            if m:
+                matched_word = m.group(0)
+                start = m.start()
+                end = m.end()
+        if matched_word:
+            extraction_spans["property.property_subtype"] = {
+                "value": final_subtype,
+                "source_span": matched_word,
+                "start": start,
+                "end": end,
+                "extractor": "property_subtype_keyword"
+            }
+            extraction_spans["property.all_detected_subtypes"] = {
+                "value": detected,
+                "source_span": matched_word,
+                "start": start,
+                "end": end,
+                "extractor": "property_subtype_keyword"
+            }
+
     return {
-
         "property_subtype": final_subtype,
-
-        "all_detected_subtypes": detected
+        "all_detected_subtypes": detected,
+        "extraction_spans": extraction_spans
     }

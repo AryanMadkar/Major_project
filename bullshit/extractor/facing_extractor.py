@@ -1,5 +1,4 @@
 import re
-
 from .GraphState import GraphState
 
 
@@ -62,20 +61,37 @@ DIRECTION_MAP = {
 
 def extract_facing(state: GraphState):
 
+
+
     text = state.cleaned_text or ""
 
     if not text:
-        return {"facing": None}
+        return {
+            "facing": None,
+        }
 
     match = FACING_PATTERN.search(text)
 
     if not match:
-        return {"facing": None}
+        return {
+            "facing": None,
+            "extraction_spans": {}
+        }
 
     direction = next(group for group in match.groups() if group)
 
     direction = direction.lower()
+    value = DIRECTION_MAP.get(direction)
 
     return {
-        "facing": DIRECTION_MAP.get(direction)
+        "facing": value,
+        "extraction_spans": {
+            "attributes.facing": {
+                "value": value,
+                "source_span": match.group(0),
+                "start": match.start(),
+                "end": match.end(),
+                "extractor": "facing_regex"
+            }
+        }
     }

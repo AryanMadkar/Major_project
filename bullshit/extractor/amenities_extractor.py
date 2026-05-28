@@ -1,6 +1,5 @@
 import json
 import re
-
 from dotenv import load_dotenv
 import ahocorasick
 from pydantic import BaseModel
@@ -143,7 +142,8 @@ Guidelines:
 - Prefer the provided whitelist of standard amenities. Only include non-whitelist items if they are explicit and clearly an amenity (avoid open-ended terms like "modern amenities").
 - Normalize common synonyms (e.g. "pool" → "swimming pool", "ac" → "air conditioning", "modular kitchen" → "modular kitchen").
 - Detect short-form/WhatsApp abbreviations ("ac", "lift", "cctv").
-- Do not hallucinate amenities that are not present or only implied vaguely.
+- STRICTLY DO NOT hallucinate or infer amenities not explicitly mentioned in the text. Never assume AC from furnishing type (furnished/semi-furnished does NOT mean AC).
+- If amenity is only implied vaguely or could be a general property feature, EXCLUDE it. Only extract amenities that are EXPLICITLY NAMED.
 
 Examples:
 
@@ -179,10 +179,14 @@ Message:
 
 def extract_amenities(state: GraphState):
 
+
+
     text = state.cleaned_text or ""
 
     if not text:
-        return {"amenities": []}
+        return {
+            "amenities": [],
+        }
 
     amenities = []
 
@@ -229,6 +233,33 @@ def extract_amenities(state: GraphState):
 
         cleaned.add(item)
 
+    # ======================================
+    # RECORD SPANS
+    # ======================================
+    extraction_spans = {}
+    amenities_spans = []
+    for item in cleaned:
+        m = re.search(rf"\b{re.escape(item)}\b", text_lower)
+        if not m:
+            m = re.search(re.escape(item), text_lower)
+        if m:
+            amenities_spans.append({
+                "value": item,
+                "source_span": text[m.start():m.end()],
+                "start": m.start(),
+                "end": m.end(),
+                "extractor": "amenities_automaton_or_llm"
+            })
+    if amenities_spans:
+        extraction_spans["amenities"] = {
+            "value": list(cleaned),
+            "source_span": ", ".join(s["source_span"] for s in amenities_spans),
+            "start": min(s["start"] for s in amenities_spans),
+            "end": max(s["end"] for s in amenities_spans),
+            "extractor": "amenities_automaton_or_llm"
+        }
+
     return {
-        "amenities": list(cleaned)
+        "amenities": list(cleaned),
+        "extraction_spans": extraction_spans
     }
