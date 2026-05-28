@@ -1,30 +1,12 @@
 from flask import Flask, jsonify, request
 
 from main import graph
+from cache import get as cache_get, set as cache_set, has as cache_has
 
 
 app = Flask(__name__)
 # Preserve non-ASCII characters in JSON responses by default
 app.config["JSON_AS_ASCII"] = False
-
-# Simple in-process memcache with TTL (keyed by user_input hash)
-import time
-_MEMCACHE = {}
-_MEMCACHE_TTL = 60  # seconds; adjust as needed
-
-def _memcache_get(key):
-    rec = _MEMCACHE.get(key)
-    if not rec:
-        return None
-    value, expiry = rec
-    if expiry is not None and time.time() > expiry:
-        del _MEMCACHE[key]
-        return None
-    return value
-
-def _memcache_set(key, value, ttl=_MEMCACHE_TTL):
-    expiry = time.time() + ttl if ttl else None
-    _MEMCACHE[key] = (value, expiry)
 
 
 def _messages_to_text(messages):
@@ -69,16 +51,17 @@ def extract():
     if not user_input:
         return jsonify({"error": "messages is required"}), 400
 
-    # Use memcache to avoid repeated expensive graph invocations
+    # Use cache to avoid repeated expensive graph invocations
     cache_key = f"graph:{hash(user_input)}"
-    result = _memcache_get(cache_key)
-    if result is None:
+    if cache_has(cache_key):
+        result = cache_get(cache_key)
+    else:
         result = graph.invoke({
             "user_input": user_input,
             "iteration_count": 0,
             "verification_history": [],
         })
-        _memcache_set(cache_key, result)
+        cache_set(cache_key, result)
 
     response_output = result.get("response_output") or {}
     if isinstance(response_output, dict):

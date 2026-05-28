@@ -2,6 +2,8 @@ import json
 import re
 
 from dotenv import load_dotenv
+import pyahocorasick
+from pydantic import BaseModel
 
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
@@ -19,6 +21,15 @@ llm = ChatGroq(
     model="llama-3.3-70b-versatile",
     temperature=0
 )
+
+
+# ==========================================
+# STRUCTURED OUTPUT MODEL
+# ==========================================
+
+class AmenitiesOutput(BaseModel):
+    """Structured output for amenities extraction."""
+    amenities: list[str]
 
 
 # ==========================================
@@ -73,6 +84,46 @@ AMENITY_NORMALIZATION = {
     "swimming pool": "swimming pool",
     "gymnasium": "gym",
 }
+
+
+# ==========================================
+# AHO-CORASICK AUTOMATON (O(n) matching)
+# ==========================================
+
+def _build_automaton():
+    """Build Aho-Corasick automaton for fast pattern matching."""
+    A = pyahocorasick.Automaton()
+    
+    regex_map = {
+        "gym": "gym",
+        "gymnasium": "gym",
+        "pool": "swimming pool",
+        "swimming": "swimming pool",
+        "swiming": "swimming pool",
+        "club": "clubhouse",
+        "clubhouse": "clubhouse",
+        "lift": "lift",
+        "parking": "parking",
+        "cctv": "cctv",
+        "security": "security",
+        "garden": "garden",
+        "play area": "kids play area",
+        "power backup": "power backup",
+        "modular kitchen": "modular kitchen",
+        "module kitchen": "modular kitchen",
+        "moduler kitchen": "modular kitchen",
+        "ac": "air conditioning",
+        "air conditioning": "air conditioning",
+    }
+    
+    for keyword, normalized in regex_map.items():
+        A.add_word(keyword, normalized)
+    
+    A.make_automaton()
+    return A
+
+# Build automaton once at module load time
+_automaton = _build_automaton()
 
 
 # ==========================================
@@ -133,68 +184,33 @@ def extract_amenities(state: GraphState):
     amenities = []
 
     # ======================================
-    # FAST REGEX PRECHECK
+    # FAST AHO-CORASICK MATCHING (O(n))
     # ======================================
 
-    regex_map = {
-
-        r"\bgym\b": "gym",
-        r"\bgymnasium\b": "gym",
-        r"\bpool\b": "swimming pool",
-        r"\bswimming\b": "swimming pool",
-        r"\bswiming\b": "swimming pool",
-        r"\bswiming\s+pool\b": "swimming pool",
-        r"\bclub\b|\bclubhouse\b": "clubhouse",
-        r"\blift\b": "lift",
-        r"\bparking\b": "parking",
-        r"\bcctv\b": "cctv",
-        r"\bsecurity\b": "security",
-        r"\bgarden\b": "garden",
-        r"\bplay area\b": "kids play area",
-        r"\bpower backup\b": "power backup",
-        r"\bmodular kitchen\b|\bmodule kitchen\b|\bmoduler kitchen\b": "modular kitchen",
-        r"\bac\b|\bair conditioning\b": "air conditioning"
-    }
-
-    for pattern, value in regex_map.items():
-
-        if re.search(pattern, text):
-
-            amenities.append(value)
+    text_lower = text.lower()
+    for end_index, (insert_order, normalized_amenity) in _automaton.iter(text_lower):
+        amenities.append(normalized_amenity)
 
     # ======================================
-    # LLM EXTRACTION
+    # LLM EXTRACTION (Structured Output)
     # ======================================
 
-    # LLM extraction: call model and parse JSON separately so failures are visible
     try:
-        chain = prompt | llm
+        structured_llm = llm.with_structured_output(AmenitiesOutput)
+        chain = prompt | structured_llm
         response = chain.invoke({"message": text})
+        
+        if response and hasattr(response, 'amenities'):
+            amenities.extend(response.amenities)
+            
     except Exception as e:
         print("Amenities LLM invocation error:", e)
-        response = None
-
-    if response is not None:
-        try:
-            content = response.content.strip()
-
-            # Remove markdown if present
-            content = content.replace("```json", "")
-            content = content.replace("```", "")
-
-            parsed = json.loads(content)
-
-            if isinstance(parsed, list):
-                amenities.extend(parsed)
-
-        except (json.JSONDecodeError, TypeError, AttributeError) as e:
-            print("Amenities parsing error:", e)
 
     # ======================================
     # CLEAN + DEDUP
     # ======================================
 
-    cleaned = []
+    cleaned = set()
 
     for item in amenities:
 
@@ -208,10 +224,8 @@ def extract_amenities(state: GraphState):
         if item in BLOCKED_GENERIC_AMENITIES:
             continue
 
-        if item not in cleaned:
-
-            cleaned.append(item)
+        cleaned.add(item)
 
     return {
-        "amenities": cleaned
+        "amenities": list(cleaned)
     }
