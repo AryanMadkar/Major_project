@@ -62,7 +62,7 @@ DIRECTION_MAP = {
 
 def extract_facing(state: GraphState):
 
-    text = state.get("cleaned_text", "")
+    text = state.cleaned_text or ""
 
     if not text:
         return {"facing": None}

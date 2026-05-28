@@ -73,8 +73,8 @@ def _price_context_score(context):
 
 def extract_price(state: GraphState):
 
-    text = state.get("cleaned_text") or ""
-    request_type = state.get("request_type", "unknown")
+    text = state.cleaned_text or ""
+    request_type = state.request_type or "unknown"
 
     price_pattern = r"""
         (?:

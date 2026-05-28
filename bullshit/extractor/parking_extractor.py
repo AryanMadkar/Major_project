@@ -8,7 +8,10 @@ from .GraphState import GraphState
 
 def extract_parking(state: GraphState):
 
-    text = state["cleaned_text"]
+    text = state.cleaned_text or ""
+
+    if not text:
+        return {"parking_count": None, "parking_type": None}
 
     parking_count = None
 

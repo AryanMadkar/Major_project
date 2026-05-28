@@ -7,10 +7,7 @@ from extractor.GraphState import GraphState
 
 def retry_router(state: GraphState):
 
-    should_continue = state.get(
-        "should_continue",
-        False
-    )
+    should_continue = state.should_continue or False
 
     if should_continue:
 

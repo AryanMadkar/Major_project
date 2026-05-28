@@ -55,8 +55,8 @@ def _is_supported_by_source(value: Any, source_text: str) -> bool:
 
 def audit_verification_agent(state: GraphState):
 
-    response_output = state.get("response_output") or {}
-    source_text = state.get("user_input") or state.get("cleaned_text") or ""
+    response_output = state.response_output or {}
+    source_text = state.user_input or state.cleaned_text or ""
 
     if not isinstance(response_output, dict):
         response_output = {}
@@ -71,7 +71,7 @@ def audit_verification_agent(state: GraphState):
     recommended_repairs = {}
 
     for field_name in ["summary", "pricing", "location", "attributes", "parking", "amenities", "property", "metadata"]:
-        value = response_output.get(field_name)
+        value = response_output.get(field_name)  # dict.get() is OK here - response_output is a dict, not GraphState
 
         if field_name in missing_fields:
             field_analysis[field_name] = {

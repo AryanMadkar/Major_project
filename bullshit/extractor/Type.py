@@ -6,7 +6,7 @@ from .GraphState import GraphState
 # =========================
 def extract_type(state: GraphState):
 
-    text = (state.get("cleaned_text") or "").lower()
+    text = (state.cleaned_text or "").lower()
 
     # =========================
     # KEYWORDS
@@ -100,8 +100,8 @@ def extract_type(state: GraphState):
     if re.search(r"\b(cr|crore|crores|lakh|lac|asking|quote|quoted|out rate|outright)\b", text):
         detected_price_type = "sale"
 
-    state_price = state.get("price")
-    if detected_price_type == "unknown" and isinstance(state_price, (int, float)) and int(state_price) >= 5_00_000:
+    state_price = state.price
+    if detected_price_type == "unknown" and state_price is not None and isinstance(state_price, (int, float)) and int(state_price) >= 5_00_000:
         detected_price_type = "sale"
 
     if detected_price_type == "sale" and request_type == "unknown":

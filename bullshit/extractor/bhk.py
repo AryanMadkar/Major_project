@@ -11,7 +11,7 @@ BHK_PATTERN = re.compile(
 # =========================
 def extract_bhk(state: GraphState):
 
-    text = state.get("cleaned_text", "")
+    text = state.cleaned_text or ""
 
     # Matches:
     # 1 BHK

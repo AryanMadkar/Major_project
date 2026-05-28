@@ -23,7 +23,7 @@ MULTISPACE_PATTERN = re.compile(r"\s+")
 
 def clean_text_node(state: GraphState):
 
-    text = state.get("user_input", "")
+    text = state.user_input or ""
 
     if not text:
         return {

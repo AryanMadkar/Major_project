@@ -168,7 +168,7 @@ def _append_pattern_spans(patterns, text):
 
 def extract_location(state: GraphState):
 
-    text = (state.get("cleaned_text") or "").lower()
+    text = (state.cleaned_text or "").lower()
 
     all_spans = []
     all_spans.extend(_append_spans(WESTERN_LINE, text, label="western"))

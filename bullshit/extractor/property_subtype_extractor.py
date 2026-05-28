@@ -186,7 +186,7 @@ PRIORITY = [
 
 def extract_property_subtype(state: GraphState):
 
-    text = state["cleaned_text"]
+    text = state.cleaned_text or ""
 
     detected = []
 

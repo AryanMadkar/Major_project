@@ -2,7 +2,7 @@ import json
 import re
 
 from dotenv import load_dotenv
-import pyahocorasick
+import ahocorasick
 from pydantic import BaseModel
 
 from langchain_groq import ChatGroq
@@ -92,7 +92,7 @@ AMENITY_NORMALIZATION = {
 
 def _build_automaton():
     """Build Aho-Corasick automaton for fast pattern matching."""
-    A = pyahocorasick.Automaton()
+    A = ahocorasick.Automaton()
     
     regex_map = {
         "gym": "gym",
@@ -179,7 +179,10 @@ Message:
 
 def extract_amenities(state: GraphState):
 
-    text = state["cleaned_text"]
+    text = state.cleaned_text or ""
+
+    if not text:
+        return {"amenities": []}
 
     amenities = []
 
@@ -188,7 +191,7 @@ def extract_amenities(state: GraphState):
     # ======================================
 
     text_lower = text.lower()
-    for end_index, (insert_order, normalized_amenity) in _automaton.iter(text_lower):
+    for end_index, normalized_amenity in _automaton.iter(text_lower):
         amenities.append(normalized_amenity)
 
     # ======================================

@@ -10,20 +10,11 @@ MAX_ITERATIONS = 3
 
 def iteration_controller(state: GraphState):
 
-    validation_report = state.get(
-        "validation_report",
-        {}
-    )
+    validation_report = state.validation_report or {}
 
-    iteration_count = state.get(
-        "iteration_count",
-        0
-    )
+    iteration_count = state.iteration_count or 0
 
-    verification_history = list(state.get(
-        "verification_history",
-        []
-    ))
+    verification_history = list(state.verification_history or [])
 
     is_valid = validation_report.get(
         "is_valid",

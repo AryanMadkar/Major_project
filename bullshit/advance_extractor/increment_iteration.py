@@ -7,10 +7,7 @@ from extractor.GraphState import GraphState
 
 def increment_iteration(state: GraphState):
 
-    current = state.get(
-        "iteration_count",
-        0
-    )
+    current = state.iteration_count or 0
 
     return {
 

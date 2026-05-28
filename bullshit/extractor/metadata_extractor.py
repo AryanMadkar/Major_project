@@ -64,10 +64,10 @@ def _normalize_request_label(request_type):
 
 
 def _fallback_title(state: GraphState):
-    bhk = state.get("bhk")
-    subtype = state.get("property_subtype") or "flat"
-    location = state.get("primary_location")
-    request_label = _normalize_request_label(state.get("request_type"))
+    bhk = state.bhk
+    subtype = state.property_subtype or "flat"
+    location = state.primary_location
+    request_label = _normalize_request_label(state.request_type)
 
     if bhk is None and not location and request_label is None:
         return None
@@ -173,8 +173,8 @@ def safe_json_array(content):
 
 def extract_metadata(state: GraphState):
 
-    text = state["cleaned_text"]
-    request_type = state.get("request_type")
+    text = state.cleaned_text or ""
+    request_type = state.request_type
 
     message_title = None
 

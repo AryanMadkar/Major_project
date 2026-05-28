@@ -50,7 +50,7 @@ UNFURNISHED = [
 
 def extract_furnishing(state: GraphState):
 
-    text = (state.get("cleaned_text") or "").lower()
+    text = (state.cleaned_text or "").lower()
 
     scores = {
         "fully_furnished": 0,

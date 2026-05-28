@@ -273,11 +273,11 @@ def merge_outputs(original, repaired):
 
 def correction_agent_1(state: GraphState):
 
-    original_message = state.get("user_input", "")
+    original_message = state.user_input or ""
 
-    current_output = state.get("response_output", {})
+    current_output = state.response_output or {}
 
-    validation_report = state.get("validation_report", {})
+    validation_report = state.validation_report or {}
 
     # ======================================
     # BUILD PROMPT

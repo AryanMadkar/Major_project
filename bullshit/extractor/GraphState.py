@@ -1,56 +1,94 @@
-from typing import Any, Optional, TypedDict
-# =========================
-# GRAPH STATE
-# =========================
-class GraphState(TypedDict):
-    user_input: str
-    bhk: Optional[int]
-    cleaned_text: Optional[str]
-    request_type: Optional[str]
-     # =========================
-    # PRICE FIELDS
-    # =========================
+from typing import Any
 
-    price: Optional[int]
+from pydantic import BaseModel
 
-    price_min: Optional[int]
 
-    price_max: Optional[int]
+class GraphState(BaseModel):
 
-    rent_price: Optional[int]
+    # =================================
+    # INPUT
+    # =================================
 
-    deposit_price: Optional[int]
-    # location----------------------------------
-    
-    locations: Optional[list[str]]
+    user_input: str | None = None
 
-    primary_location: Optional[str]
+    cleaned_text: str | None = None
 
-    railway_line: Optional[str]
+    # =================================
+    # PROPERTY DETAILS
+    # =================================
 
-    furnishing: Optional[str]
+    bhk: int | None = None
 
-    facing: Optional[str]
-    
-    amenities: Optional[list[str]]
-    validation_report: Optional[dict[str, Any]]
+    property_subtype: str | None = None
 
-    parking_count: Optional[int]
-    property_subtype: Optional[str]
-    iteration_count: Optional[int]
+    furnishing: str | None = None
 
-    verification_history: Optional[list]
+    facing: str | None = None
 
-    should_continue: Optional[bool]
-    all_detected_subtypes: Optional[list[str]]
-    message_title: Optional[str]
+    parking_count: int | None = None
 
-    contact_people: Optional[list[str]]
+    parking_type: str | None = None
 
-    contact_numbers: Optional[list[str]]
+    amenities: list[str] | None = None
 
-    metadata_summary: Optional[dict[str, Any]]
+    # =================================
+    # PRICE
+    # =================================
 
-    parking_type: Optional[str]
-    response_output: Optional[dict[str, Any]]
-    
+    price: int | None = None
+
+    price_min: int | None = None
+
+    price_max: int | None = None
+
+    rent_price: int | None = None
+
+    deposit_price: int | None = None
+
+    # =================================
+    # LOCATION
+    # =================================
+
+    locations: list[str] | None = None
+
+    primary_location: str | None = None
+
+    railway_line: str | None = None
+
+    # =================================
+    # CONTACT
+    # =================================
+
+    contact_people: list[str] | None = None
+
+    contact_numbers: list[str] | None = None
+
+    # =================================
+    # REQUEST
+    # =================================
+
+    request_type: str | None = None
+
+    # =================================
+    # VALIDATION / PIPELINE
+    # =================================
+
+    validation_report: dict[str, Any] | None = None
+
+    verification_history: list[dict[str, Any]] | None = None
+
+    iteration_count: int | None = None
+
+    should_continue: bool | None = None
+
+    # =================================
+    # EXTRA METADATA
+    # =================================
+
+    all_detected_subtypes: list[str] | None = None
+
+    metadata_summary: dict[str, Any] | None = None
+
+    response_output: dict[str, Any] | None = None
+
+    message_title: str | None = None
